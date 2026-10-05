@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  index.html — Kasese Hills Academy School Management System
+  ============================================================
+  This is the LOGIN / LANDING PAGE for the entire system.
+
+  How it works:
+  - shared.js is loaded first — it injects the CSS and defines all
+    shared functions (auth, pages, modals, utilities).
+  - initLogin() is called at the bottom of this file.
+  - If the user already has an active session (sessionStorage), they
+    are redirected straight to their portal without seeing this screen.
+  - On successful sign-in or sign-up, saveLogin() redirects the browser
+    to the matching portal-{role}.html file.
+
+  Portal files:
+    portal-admin.html       — Administrator
+    portal-registrar.html   — Registrar (Admissions)
+    portal-dos.html         — Director of Studies
+    portal-accountant.html  — School Accountant
+    portal-property.html    — Property Department
+    portal-boarding.html    — Boarding & Hostel
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Theme colour shown in the browser chrome on mobile -->
+  <meta name="theme-color" content="#17263d">
+  <title>Kasese Hills Academy | Sign In</title>
+  <!--
+    shared.js injects all CSS at runtime (see the injectStyles() IIFE at the
+    top of that file), so no <style> block is needed here.
+  -->
+  <script src="shared.js"></script>
+</head>
+<body>
+  <!--
+    #root — the single mount point.
+    loginScreen() (defined in shared.js) renders the full login UI into here.
+  -->
+  <div id="root"></div>
+
+  <script>
+    /*
+     * Entry point for the login page.
+     * initLogin() is defined in shared.js. It checks for an existing session
+     * and either redirects to the correct portal or renders the login form.
+     */
+    initLogin();
+  </script>
+</body>
+</html>
