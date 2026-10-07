@@ -20,6 +20,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Director of Studies — Five Star Model School</title>
   <script src="shared.js"></script>
+  <script src="staff-team.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -80,6 +81,7 @@ KHA.init("dos", function(session) {
       case "Daily enrollment":    h = pgDailyEnrollment(); break;
       case "Teacher attendance":   h = pgTeacherAtt();   break;
       case "Parent updates":       h = KHA.renderParentUpdates("dos", session); break;
+      case "School team":          h = window.renderSchoolTeam(); break;
       case "Messages":             h = KHA.renderMessages("dos", session); break;
       default: h = pgDashboard();
     }
@@ -419,7 +421,7 @@ KHA.init("dos", function(session) {
 
     var html = KHA.pageHead("Report cards",
       "Generate and print pupil academic report cards.",
-      '<button class="btn secondary small no-print" data-action="printReport">🖨️ Print current card</button>');
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print current card</button>');
 
     html += '<div class="notice info">Select a pupil and term, then click "Generate" to preview the report card. '
       +'The school badge watermark and passport photo are included automatically.</div>';
@@ -435,10 +437,7 @@ KHA.init("dos", function(session) {
       +'<select id="rcTerm" class="search">'
       +'<option>Term 1</option><option>Term 2</option><option>Term 3</option></select>'
       +'<select id="rcYear" class="search">'
-      +Array.from(new Set([KHA.CURRENT_YEAR].concat(KHA.load(KHA.STORE.marks, [])
-        .map(function(m){ return m.year; }).filter(Boolean)))).sort().reverse()
-        .map(function(y){ return '<option'+(y===KHA.CURRENT_YEAR?' selected':'')+'>'+KHA.esc(y)+'</option>'; }).join("")
-      +'</select>'
+      +'<option>2024–2025</option><option>2025–2026</option><option>2026–2027</option></select>'
       +'<button class="btn" id="rcGenBtn">Generate report card →</button>'
       +'</div>'
       +'<div id="rcOutput"></div>';
@@ -450,8 +449,8 @@ KHA.init("dos", function(session) {
     var allMarks = KHA.load(KHA.STORE.marks, []);
     /* Find marks for this pupil in the selected term */
     var marks = allMarks.filter(function(m){
-      return (m.admission ? m.admission === student.admission : m.pupilName === student.name)
-        && m.term === term && (!m.year || m.year === year);
+      return (m.admission === student.admission || m.pupilName === student.name)
+        && m.term === term;
     });
 
     var total = marks.reduce(function(s,m){ return s + (Number(m.score)||0); }, 0);
@@ -460,9 +459,7 @@ KHA.init("dos", function(session) {
     var overallGrade = marks.length ? KHA.gradeFromScore(total, maxTotal) : "—";
 
     /* Calculate position among classmates for the same term */
-    var allMarksForTerm = allMarks.filter(function(m){
-      return m.term === term && (!m.year || m.year === year) && m.class === student.class;
-    });
+    var allMarksForTerm = allMarks.filter(function(m){ return m.term === term && m.class === student.class; });
     var pupilTotals = {};
     allMarksForTerm.forEach(function(m){
       var k = m.admission||m.pupilName;
@@ -479,7 +476,7 @@ KHA.init("dos", function(session) {
       return '<tr>'
         +'<td style="text-align:center">'+(i+1)+'</td>'
         +'<td>'+KHA.esc(m.subject)+'</td>'
-        +'<td style="text-align:center">'+KHA.esc(m.score===""||m.score==null?"—":m.score)+'</td>'
+        +'<td style="text-align:center">'+KHA.esc(m.score||"—")+'</td>'
         +'<td style="text-align:center">'+KHA.esc(m.outOf||100)+'</td>'
         +'<td style="text-align:center">'+pct+'%</td>'
         +'<td style="text-align:center;font-weight:700;color:'+color+'">'+KHA.esc(g)+'</td>'
@@ -754,15 +751,10 @@ KHA.init("dos", function(session) {
           +fi("totalMarks","Total marks","number",rec.totalMarks||100)
           +'</div>';
       case "marks":
-        var pupils = KHA.load(KHA.STORE.students, []);
         return '<div class="form-grid">'
-          +'<div class="field"><label>Pupil</label><select name="admission" required>'
-          +'<option value="">— Select registered pupil —</option>'
-          +pupils.map(function(p){
-            return '<option value="'+KHA.esc(p.admission)+'"'+(rec.admission===p.admission?" selected":"")+'>'
-              +KHA.esc(p.name)+' ('+KHA.esc(p.admission)+')</option>';
-          }).join("")
-          +'</select></div>'
+          +fi("admission","Admission number","text",rec.admission,1)
+          +fi("pupilName","Pupil full name","text",rec.pupilName,1)
+          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
           +fi("subject","Subject","text",rec.subject,1)
           +fi("assessmentType","Assessment type","select",rec.assessmentType,1,
               ["Continuous Assessment","Mid-term Exam","End of Term","Mock Exam","Project"])
@@ -959,26 +951,13 @@ KHA.init("dos", function(session) {
 
   async function saveRecord(storeKey, id) {
     var form  = document.getElementById("mForm");
-    if (!form.reportValidity()) return;
     var fd    = new FormData(form);
     var storeId = KHA.STORE[storeKey] || storeKey;
     var records = KHA.load(storeId, []);
     var rec   = {};
     fd.forEach(function(v,k){ rec[k]=v; });
-    if (storeKey === "marks") {
-      var pupil = KHA.load(KHA.STORE.students, []).find(function(s){ return s.admission === rec.admission; });
-      var score = Number(rec.score);
-      var outOf = Number(rec.outOf);
-      if (!pupil) { KHA.toast("Select a registered pupil.", "error"); return; }
-      if (String(rec.score).trim() === "" || !Number.isFinite(score) || !Number.isFinite(outOf)
-        || outOf <= 0 || score < 0 || score > outOf) {
-        KHA.toast("Enter a score between 0 and the maximum marks.", "error");
-        return;
-      }
-      rec.pupilName = pupil.name;
-      rec.class = pupil.class;
-      rec.grade = KHA.gradeFromScore(score, outOf);
-    }
+    /* Auto-compute grade if this is a marks record */
+    if (storeKey === "marks") rec.grade = KHA.gradeFromScore(rec.score, rec.outOf||100);
     if (!id) { rec.id = KHA.uid(); rec.createdAt = KHA.nowISO(); records.push(rec); }
     else {
       rec.id = id;
@@ -1044,7 +1023,7 @@ KHA.init("dos", function(session) {
         if (!s) { KHA.toast("Pupil not found.", "error"); return; }
         document.getElementById("rcOutput").innerHTML = buildReportCard(s, term, year)
           +'<div class="no-print" style="margin-top:12px;display:flex;gap:8px">'
-          +'<button class="btn secondary" data-action="printReport">🖨️ Print report card</button></div>';
+          +'<button class="btn secondary" onclick="window.print()">🖨️ Print report card</button></div>';
       });
     }
 
@@ -1056,7 +1035,6 @@ KHA.init("dos", function(session) {
       if (t.dataset.action==="addTeacher")          { openTeacherModal(null); return; }
       if (t.dataset.action==="addRecord")           { openRecordModal(t.dataset.store, null); return; }
       if (t.dataset.action==="addTT")               { openTTModal(t.dataset.ttType); return; }
-      if (t.dataset.action==="printReport")           { printReportCard(); return; }
       if (t.dataset.editTeacher)                    { openTeacherModal(t.dataset.editTeacher); return; }
       if (t.dataset.viewTeacher)                    { openViewTeacher(t.dataset.viewTeacher); return; }
       if (t.dataset.delTeacher)                     { deleteRecord("teachers", t.dataset.delTeacher); return; }
@@ -1066,19 +1044,6 @@ KHA.init("dos", function(session) {
     });
     KHA.wireParentUpdates(content, "dos", session, renderPage);
     KHA.wireMessages(content, "dos", session, renderPage);
-  }
-
-  function printReportCard() {
-    if (!document.getElementById("printRC")) {
-      KHA.toast("Generate a report card before printing.", "error");
-      return;
-    }
-    document.body.classList.add("print-report");
-    window.addEventListener("afterprint", function clearPrintMode(){
-      document.body.classList.remove("print-report");
-      window.removeEventListener("afterprint", clearPrintMode);
-    });
-    window.print();
   }
 
   boot();

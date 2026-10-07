@@ -144,7 +144,7 @@ KHA.init("parent", function(session) {
     html += '<div class="cards">';
     students.forEach(function(student) {
       html += '<button type="button" class="module-card" data-select-child="'+KHA.esc(student.id)+'" style="text-align:left;border:2px solid '+(currentStudent() && currentStudent().id===student.id?"var(--blue)":"var(--line)")+';cursor:pointer">'
-        + '<div class="mc-icon">🎓</div><h3>'+KHA.esc(student.name)+'</h3><p>'+KHA.esc(student.class||"Class not set")+(student.stream?" · "+KHA.esc(student.stream):"")+'<br>Admission: '+KHA.esc(student.admission||"—")+'</p></button>';
+        + '<h3>'+KHA.esc(student.name)+'</h3><p>'+KHA.esc(student.class||"Class not set")+(student.stream?" · "+KHA.esc(student.stream):"")+'<br>Admission: '+KHA.esc(student.admission||"—")+'</p></button>';
     });
     html += '</div>';
 

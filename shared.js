@@ -76,7 +76,7 @@ window.KHA = (function () {
     "P.7"
   ];
 
-  /* Shared school logo used in the portal hub, sign-in screens, and documents. */
+  /* Shared school logo used in the hub, login screens, and school documents. */
   const BADGE_SVG =
     '<img src="star%20logo.png" alt="Five Star Model School logo" style="width:100%;height:100%;object-fit:contain">';
 
@@ -100,7 +100,7 @@ window.KHA = (function () {
       color: "#4863de",
       groups: {
         "School overview":   ["Dashboard", "Department activity", "Messages", "Portal access", "Announcements", "School calendar", "Parent updates"],
-        "People":            ["Students", "Teachers", "Staff profiles"],
+        "People":            ["Students", "Teachers", "Staff profiles", "School team"],
         "Academics":         ["Classes", "Subjects", "Marks", "Report cards", "Examinations"],
         "Attendance":        ["Student attendance", "Daily enrollment", "Teacher attendance"],
         "Timetables":        ["Class timetable", "Teacher timetable", "Subject timetable", "Examination timetable"],
@@ -121,7 +121,7 @@ window.KHA = (function () {
       title: "Admissions Registrar",
       color: "#168560",
       groups: {
-        "Admissions & Records": ["Dashboard", "Students", "Student transfers", "Admissions report", "Messages", "Parent updates"]
+        "Admissions & Records": ["Dashboard", "Students", "Student transfers", "Admissions report", "School team", "Messages", "Parent updates"]
       }
     },
 
@@ -135,7 +135,7 @@ window.KHA = (function () {
       title: "Director of Studies",
       color: "#7c3aed",
       groups: {
-        "Staff management":  ["Dashboard", "Teachers", "Staff profiles", "Messages", "Parent updates"],
+        "Staff management":  ["Dashboard", "Teachers", "Staff profiles", "School team", "Messages", "Parent updates"],
         "Curriculum":        ["Classes", "Streams", "Subjects"],
         "Timetables":        ["Class timetable", "Teacher timetable", "Subject timetable", "Examination timetable"],
         "Assessment":        ["Marks", "Report cards", "Examinations"],
@@ -153,7 +153,7 @@ window.KHA = (function () {
       title: "School Accountant",
       color: "#b45309",
       groups: {
-        "Finance management": ["Dashboard", "Fees structure", "Invoices", "Payments", "Scholarships", "Payment requests", "Payment settings", "Messages", "Parent updates"],
+        "Finance management": ["Dashboard", "Fees structure", "Invoices", "Payments", "Scholarships", "School team", "Payment requests", "Payment settings", "Messages", "Parent updates"],
         "Reports":            ["Financial reports", "Payment receipts"]
       }
     },
@@ -168,7 +168,7 @@ window.KHA = (function () {
       title: "Property Department",
       color: "#0369a1",
       groups: {
-        "Library":   ["Dashboard", "Books", "Book categories", "Book issues"],
+        "Library":   ["Dashboard", "Books", "Book categories", "Book issues", "School team"],
         "Transport": ["Buses", "Drivers", "Routes", "Transport assignments", "Messages", "Parent updates"]
       }
     },
@@ -183,7 +183,7 @@ window.KHA = (function () {
       title: "Boarding & Hostel",
       color: "#be185d",
       groups: {
-        "Hostel management": ["Dashboard", "Dormitories", "Beds", "Boarding assignments", "House masters", "Messages", "Parent updates"]
+        "Hostel management": ["Dashboard", "Dormitories", "Beds", "Boarding assignments", "House masters", "School team", "Messages", "Parent updates"]
       }
     },
 
@@ -217,6 +217,7 @@ window.KHA = (function () {
     "Admissions report":      "📊",
     "Teachers":               "👩‍🏫",
     "Staff profiles":         "👥",
+    "School team":            "🏅",
     "Classes":                "🏫",
     "Streams":                "▤",
     "Subjects":               "📚",
@@ -633,6 +634,7 @@ a { color: inherit; }
   justify-content: space-between;
   padding: clamp(28px, 5vw, 70px);
   color: #fff;
+  /* Deep blue gradient with subtle radial highlight */
   background: linear-gradient(150deg, rgba(18, 33, 58, 0.78), rgba(30, 63, 120, 0.56));
 }
 /* School crest + name in the top-left corner of the login panel */
@@ -1082,7 +1084,6 @@ tbody tr:last-child td { border: 0; }
 /* ── PRINT STYLES ─────────────────────────────────────────────────────── */
 @media print {
   body { background: #fff; }
-  @page { size: A4; margin: 10mm; }
   /* Hide navigation and non-essential UI when printing */
   .sidebar, .topbar, .page-head, .no-print, .toast, .modal-backdrop { display: none !important; }
   .main            { margin: 0 !important; }
@@ -1091,14 +1092,6 @@ tbody tr:last-child td { border: 0; }
   .table-scroll    { overflow: visible; }
   table            { white-space: normal; }
   th, td           { font-size: 9px; }
-  body.print-report * { visibility: hidden !important; }
-  body.print-report #printRC,
-  body.print-report #printRC * { visibility: visible !important; }
-  body.print-report #printRC {
-    position: absolute; top: 0; left: 0;
-    width: 100%; max-width: none !important; margin: 0 !important;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
 }
     `;
     document.head.appendChild(style);
@@ -1525,6 +1518,7 @@ tbody tr:last-child td { border: 0; }
         document.getElementById("kha-sidebar").classList.remove("open");
       })
     );
+
   }
 
   /**

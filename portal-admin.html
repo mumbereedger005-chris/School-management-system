@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Admin Portal — Five Star Model School</title>
   <script src="shared.js"></script>
+  <script src="staff-team.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -66,7 +67,8 @@ KHA.init("admin", function(session) {
       case "Portal access":      html = pagePortalAccess(); break;
       case "Announcements":      html = pageAnnouncements(); break;
       case "School calendar":    html = pageSchoolCalendar(); break;
-      case "Parent updates":     html = KHA.renderParentUpdates("admin", session); break;
+      case "Parent updates":   html = KHA.renderParentUpdates("admin", session); break;
+      case "School team":      html = window.renderSchoolTeam(); break;
       case "Students":           html = pageStudents(); break;
       case "Teachers":           html = pageTeachers(); break;
       case "Staff profiles":     html = pageStaffProfiles(); break;

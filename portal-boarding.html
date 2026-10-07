@@ -18,6 +18,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Boarding Portal — Five Star Model School</title>
   <script src="shared.js"></script>
+  <script src="staff-team.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -52,6 +53,7 @@ KHA.init("boarding", function(session) {
       case "Boarding assignments":h=pgAssignments();   break;
       case "House masters":       h=pgHouseMasters();   break;
       case "Parent updates":      h=KHA.renderParentUpdates("boarding", session); break;
+      case "School team":         h=window.renderSchoolTeam(); break;
       case "Messages":            h=KHA.renderMessages("boarding", session); break;
       default: h=pgDashboard();
     }
@@ -130,7 +132,6 @@ KHA.init("boarding", function(session) {
 
   function qCard(icon,title,desc,navPage){
     return '<div class="module-card">'
-      +'<div class="mc-icon">'+icon+'</div>'
       +'<h3>'+KHA.esc(title)+'</h3><p>'+KHA.esc(desc)+'</p>'
       +'<button class="btn small" data-nav-to="'+KHA.esc(navPage)+'">Open →</button>'
       +'</div>';

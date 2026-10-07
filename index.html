@@ -28,7 +28,9 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(150deg, #0f1e35 0%, #1a3a6e 60%, #1b4d8a 100%);
+      background:
+        linear-gradient(150deg, rgba(15, 30, 53, 0.78), rgba(26, 58, 110, 0.68) 60%, rgba(27, 77, 138, 0.72)),
+        url("house.jpg") center / cover no-repeat fixed;
       display: grid;
       place-items: center;
       font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -109,7 +111,7 @@
       align-items: center;
       justify-content: center;
       gap: 6px;
-      padding: 9px 16px;
+      padding: 10px 15px;
       border-radius: 8px;
       color: #fff;
       font-size: 11px;
@@ -118,6 +120,7 @@
       cursor: pointer;
       width: 100%;
       text-decoration: none;
+      box-sizing: border-box;
     }
 
     /* Footer */
@@ -143,7 +146,7 @@
   <div class="hub">
     <!-- School crest and title -->
     <div class="hub-top">
-      <!-- School logo injected by JS below -->
+      <!-- Badge SVG injected by JS below -->
       <div class="hub-badge" id="hubBadge"></div>
       <h1>Five Star Model School</h1>
       <p class="sub">Integrated School Management System · Kasese, Western Uganda</p>
@@ -165,13 +168,13 @@
   /*
    * Hub page script
    * ---------------
-   * Inserts the school logo and dynamically builds the portal
+   * Inserts the school badge SVG and dynamically builds the portal
    * cards.  Using JavaScript keeps the HTML clean and makes it easy to
    * add or rename portals in one place.
    */
   (function () {
 
-    // Inject the school logo into the hub header
+    // Inject the school badge into the hub header
     document.getElementById("hubBadge").innerHTML = KHA.BADGE_SVG;
 
     /*

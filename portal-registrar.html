@@ -20,6 +20,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Registrar Portal — Five Star Model School</title>
   <script src="shared.js"></script>
+  <script src="staff-team.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -98,6 +99,7 @@ KHA.init("registrar", function (session) {
       case "Student transfers":html = pageTransfers();       break;
       case "Admissions report":html = pageReport();          break;
       case "Parent updates":   html = KHA.renderParentUpdates("registrar", session); break;
+      case "School team":      html = window.renderSchoolTeam(); break;
       case "Messages":         html = KHA.renderMessages("registrar", session); break;
       default:                 html = pageDashboard();
     }

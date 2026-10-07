@@ -17,6 +17,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Accountant Portal — Five Star Model School</title>
   <script src="shared.js"></script>
+  <script src="staff-team.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -61,6 +62,7 @@ KHA.init("accountant", function(session) {
       case "Financial reports":h=pgFinancialReports(); break;
       case "Payment receipts": h=pgReceipts();      break;
       case "Parent updates":   h=KHA.renderParentUpdates("accountant", session); break;
+      case "School team":      h=window.renderSchoolTeam(); break;
       case "Messages":         h=KHA.renderMessages("accountant", session); break;
       case "Payment requests": h=pgPaymentRequests(); break;
       case "Payment settings": h=pgPaymentSettings(); break;
