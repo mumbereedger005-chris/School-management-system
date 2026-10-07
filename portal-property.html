@@ -1,0 +1,576 @@
+<!doctype html>
+<!--
+  portal-property.html — Property & Transport Portal
+  ====================================================
+  Manages all school physical assets and pupil transport.
+  Responsibilities:
+    • Library: book inventory, categories, book issue/return
+    • Transport: buses, drivers, routes, pupil bus assignments
+    • Pickup and drop-off points per route
+    • Transport fees per route
+    • Print route manifests and transport assignment lists
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Property Portal — Five Star Model School</title>
+  <script src="shared.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+
+KHA.init("property", function(session) {
+
+  var page="Dashboard", hist=[], searchQ="";
+
+  function navigate(p){ if(p===page)return; hist.push(page); page=p; searchQ=""; renderPage(); }
+  function goBack(){ if(!hist.length)return; page=hist.pop(); renderPage(); }
+
+  function boot(){
+    KHA.buildShell({
+      roleKey:"property", navGroups:KHA.ROLES.property.groups,
+      activePage:page, onNav:navigate, session:session,
+      extraRight:'<a href="index.html" class="btn secondary small no-print">All portals</a>'
+    });
+    document.getElementById("kha-back").addEventListener("click",goBack);
+    renderPage();
+  }
+
+  function renderPage(){
+    KHA.setCrumb(page);
+    document.getElementById("kha-back").disabled=!hist.length;
+    var h="";
+    switch(page){
+      case "Dashboard":            h=pgDashboard();    break;
+      case "Books":                h=pgBooks();        break;
+      case "Book categories":      h=pgBookCats();     break;
+      case "Book issues":          h=pgBookIssues();   break;
+      case "Buses":                h=pgBuses();        break;
+      case "Drivers":              h=pgDrivers();      break;
+      case "Routes":               h=pgRoutes();       break;
+      case "Transport assignments":h=pgTransport();    break;
+      case "Parent updates":        h=KHA.renderParentUpdates("property", session); break;
+      case "Messages":              h=KHA.renderMessages("property", session); break;
+      default: h=pgDashboard();
+    }
+    KHA.setContent(h);
+    wireEvents();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     DASHBOARD
+  ══════════════════════════════════════════════════════ */
+  function pgDashboard(){
+    var books     = KHA.load(KHA.STORE.books,[]);
+    var buses     = KHA.load(KHA.STORE.buses,[]);
+    var drivers   = KHA.load(KHA.STORE.drivers,[]);
+    var routes    = KHA.load(KHA.STORE.routes,[]);
+    var transport = KHA.load(KHA.STORE.transport,[]);
+    var issues    = KHA.load(KHA.STORE.bookIssues,[]);
+    var activeBuses = buses.filter(function(b){ return b.status==="Active"; }).length;
+    var outBooks    = issues.filter(function(i){ return i.status==="Issued"; }).length;
+
+    return KHA.pageHead("Property Dashboard",
+      "Asset and transport management — "+KHA.CURRENT_YEAR,
+      '<button class="btn small" data-action="addBus">+ Register bus</button>')
+
+    +'<div class="stats">'
+    +KHA.statCard("📖","Library titles",   books.length,    "Book titles in inventory", true)
+    +KHA.statCard("📤","Books on loan",     outBooks,        issues.length+" total issues")
+    +KHA.statCard("🚌","School buses",      buses.length,    activeBuses+" active")
+    +KHA.statCard("🚗","Drivers",           drivers.length,  "Registered drivers")
+    +KHA.statCard("🗺️","Routes",            routes.length,   "Active transport routes")
+    +KHA.statCard("📍","Pupils on transport",transport.length,"Bus assignments")
+    +'</div>'
+
+    +'<div class="grid2">'
+    /* Bus status breakdown */
+    +'<section class="panel"><div class="panel-head"><h2>Bus fleet status</h2></div>'
+    +'<div class="bars">'
+    +["Active","Maintenance","Inactive"].map(function(s){
+        var n=buses.filter(function(b){ return b.status===s; }).length;
+        var pct=Math.max(4,Math.round((n/Math.max(buses.length,1))*100));
+        var col=s==="Active"?"var(--green)":s==="Maintenance"?"var(--amber)":"var(--red)";
+        return '<div class="barline"><span>'+s+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div>'
+          +'<strong>'+n+'</strong></div>';
+      }).join("")
+    +'</div></section>'
+
+    /* Routes + assignments */
+    +'<section class="panel"><div class="panel-head"><h2>Route assignments</h2></div>'
+    +'<div class="bars">'
+    +(routes.length ? routes.map(function(r){
+        var n=transport.filter(function(t){ return t.route===r.name; }).length;
+        var cap=r.capacity||40;
+        return '<div class="barline"><span title="'+KHA.esc(r.name)+'">'+KHA.esc(r.name)+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+Math.max(4,Math.round((n/cap)*100))+'%"></div></div>'
+          +'<strong>'+n+'</strong></div>';
+      }).join("")
+      : '<div style="padding:16px;font-size:10px;color:var(--muted)">No routes created yet.</div>')
+    +'</div></section>'
+    +'</div>'
+
+    +'<div class="cards">'
+    +qCard("📖","Library books",    "Manage book inventory",          "Books")
+    +qCard("🗂️","Book categories",  "Organise book categories",       "Book categories")
+    +qCard("📤","Book issues",      "Track borrowed books",           "Book issues")
+    +qCard("🚌","Buses",            "Register and manage buses",      "Buses")
+    +qCard("🚗","Drivers",          "Manage bus drivers",             "Drivers")
+    +qCard("🗺️","Routes",           "Define transport routes",        "Routes")
+    +qCard("📍","Transport assign.", "Assign pupils to buses",        "Transport assignments")
+    +'</div>';
+  }
+
+  function qCard(icon,title,desc,navPage){
+    return '<div class="module-card">'
+      +'<div class="mc-icon">'+icon+'</div>'
+      +'<h3>'+KHA.esc(title)+'</h3><p>'+KHA.esc(desc)+'</p>'
+      +'<button class="btn small" data-nav-to="'+KHA.esc(navPage)+'">Open →</button>'
+      +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BOOKS
+  ══════════════════════════════════════════════════════ */
+  function pgBooks(){
+    var rows=KHA.load(KHA.STORE.books,[]).filter(function(b){
+      if(!searchQ)return true;
+      return (b.title||"").toLowerCase().includes(searchQ.toLowerCase())
+        ||(b.isbn||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("Library books",rows.length+" title(s)",
+      '<input class="search" id="tSearch" placeholder="Search title or ISBN…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="books">+ Register book</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print list</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"title",label:"Title",render:function(r){ return '<strong>'+KHA.esc(r.title||"—")+'</strong>'; }},
+        {key:"category",label:"Category"},
+        {key:"author",label:"Author"},
+        {key:"isbn",label:"ISBN / Code"},
+        {key:"quantity",label:"Total copies"},
+        {key:"available",label:"Available"},
+        {key:"location",label:"Location / shelf"},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="books" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="books" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BOOK CATEGORIES
+  ══════════════════════════════════════════════════════ */
+  function pgBookCats(){
+    var rows=KHA.load(KHA.STORE.bookCats,[]);
+    return KHA.pageHead("Book categories",rows.length+" categor(ies)",
+      '<button class="btn small" data-action="addRecord" data-store="bookCats">+ Add category</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"name",label:"Category name"},
+        {key:"description",label:"Description"},
+        {key:"count",label:"Books",render:function(r){
+          var n=KHA.load(KHA.STORE.books,[]).filter(function(b){ return b.category===r.name; }).length;
+          return String(n);
+        }}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="bookCats" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="bookCats" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BOOK ISSUES (lending)
+  ══════════════════════════════════════════════════════ */
+  function pgBookIssues(){
+    var rows=KHA.load(KHA.STORE.bookIssues,[]).filter(function(i){
+      if(!searchQ)return true;
+      return (i.borrowerName||"").toLowerCase().includes(searchQ.toLowerCase())
+        ||(i.bookTitle||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("Book issues / lending",rows.length+" record(s)",
+      '<input class="search" id="tSearch" placeholder="Search borrower or book…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="bookIssues">+ Issue book</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"bookTitle",label:"Book"},
+        {key:"borrowerName",label:"Borrower (pupil / teacher)"},
+        {key:"borrowerClass",label:"Class"},
+        {key:"issueDate",label:"Issue date",render:function(r){ return KHA.fmtDate(r.issueDate); }},
+        {key:"dueDate",label:"Due date",render:function(r){ return KHA.fmtDate(r.dueDate); }},
+        {key:"returnDate",label:"Returned",render:function(r){ return r.returnDate?KHA.fmtDate(r.returnDate):"Not returned"; }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="bookIssues" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="bookIssues" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BUSES
+  ══════════════════════════════════════════════════════ */
+  function pgBuses(){
+    var rows=KHA.load(KHA.STORE.buses,[]).filter(function(b){
+      if(!searchQ)return true;
+      return (b.registration||"").toLowerCase().includes(searchQ.toLowerCase())
+        ||(b.model||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("School buses",rows.length+" vehicle(s)",
+      '<input class="search" id="tSearch" placeholder="Search registration or model…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="buses">+ Register bus</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print fleet list</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"registration",label:"Registration",render:function(r){ return '<strong>'+KHA.esc(r.registration||"—")+'</strong>'; }},
+        {key:"model",label:"Model / Make"},
+        {key:"capacity",label:"Seats"},
+        {key:"driver",label:"Driver"},
+        {key:"route",label:"Route"},
+        {key:"insuranceExpiry",label:"Insurance",render:function(r){ return KHA.fmtDate(r.insuranceExpiry); }},
+        {key:"nextService",label:"Next service",render:function(r){ return KHA.fmtDate(r.nextService); }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="buses" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="buses" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     DRIVERS
+  ══════════════════════════════════════════════════════ */
+  function pgDrivers(){
+    var rows=KHA.load(KHA.STORE.drivers,[]).filter(function(d){
+      if(!searchQ)return true;
+      return (d.name||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("Bus drivers",rows.length+" driver(s)",
+      '<input class="search" id="tSearch" placeholder="Search driver name…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="drivers">+ Register driver</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"photo",label:"",render:function(r){
+          return '<span class="avatar sm">'+(r.photo?'<img src="'+KHA.esc(r.photo)+'" alt="">':KHA.esc(KHA.initials(r.name)))+'</span>';
+        }},
+        {key:"name",label:"Driver name",render:function(r){ return '<strong>'+KHA.esc(r.name||"—")+'</strong>'; }},
+        {key:"licenseNo",label:"Licence no."},
+        {key:"phone",label:"Phone"},
+        {key:"bus",label:"Assigned bus"},
+        {key:"licenseExpiry",label:"Licence expiry",render:function(r){ return KHA.fmtDate(r.licenseExpiry); }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="drivers" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="drivers" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     ROUTES
+  ══════════════════════════════════════════════════════ */
+  function pgRoutes(){
+    var rows=KHA.load(KHA.STORE.routes,[]).filter(function(r){
+      if(!searchQ)return true;
+      return (r.name||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("Transport routes",rows.length+" route(s)",
+      '<input class="search" id="tSearch" placeholder="Search route…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="routes">+ Create route</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print routes</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"name",label:"Route name",render:function(r){ return '<strong>'+KHA.esc(r.name||"—")+'</strong>'; }},
+        {key:"driver",label:"Driver"},
+        {key:"bus",label:"Bus"},
+        {key:"stops",label:"Pickup / drop-off stops",render:function(r){
+          return '<span title="'+KHA.esc(r.stops||"")+'">'+KHA.esc((r.stops||"").slice(0,50))+(r.stops&&r.stops.length>50?"…":"")+'</span>';
+        }},
+        {key:"fee",label:"Transport fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
+        {key:"pupils",label:"Pupils",render:function(r){
+          return String(KHA.load(KHA.STORE.transport,[]).filter(function(t){ return t.route===r.name; }).length);
+        }}
+      ],rows,function(r){
+        return '<button class="btn icon" data-view-route="'+KHA.esc(r.id)+'" title="View manifest">📋</button>'
+          +'<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="routes" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="routes" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     TRANSPORT ASSIGNMENTS
+  ══════════════════════════════════════════════════════ */
+  function pgTransport(){
+    var rows=KHA.load(KHA.STORE.transport,[]).filter(function(t){
+      if(!searchQ)return true;
+      var q=searchQ.toLowerCase();
+      return (t.name||"").toLowerCase().includes(q)||(t.route||"").toLowerCase().includes(q);
+    });
+    return KHA.pageHead("Transport assignments",rows.length+" assignment(s)",
+      '<input class="search" id="tSearch" placeholder="Search pupil or route…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="transport">+ Assign pupil</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print manifest</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"name",label:"Pupil"},
+        {key:"admission",label:"Adm. #"},
+        {key:"class",label:"Class"},
+        {key:"route",label:"Route"},
+        {key:"pickup",label:"Pickup point"},
+        {key:"dropoff",label:"Drop-off"},
+        {key:"fee",label:"Fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="transport" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="transport" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     STATUS BADGE
+  ══════════════════════════════════════════════════════ */
+  function sBadge(r){
+    var v=r.status||""; var c="gray";
+    if(["Active","Available","In stock","Assigned","Issued"].includes(v)) c="green";
+    else if(["Maintenance","Low stock","Pending"].includes(v)) c="amber";
+    else if(["Inactive","Checked out","Overdue","Inactive"].includes(v)) c="red";
+    return '<span class="badge '+c+'">'+KHA.esc(v)+'</span>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     FORM DEFINITIONS
+  ══════════════════════════════════════════════════════ */
+  function formForStore(storeKey,rec){
+    rec=rec||{};
+    switch(storeKey){
+      case "books":
+        return '<div class="form-grid">'
+          +fi("title","Book title","text",rec.title,1)
+          +fi("author","Author","text",rec.author)
+          +fi("category","Category","text",rec.category)
+          +fi("isbn","ISBN / asset code","text",rec.isbn)
+          +fi("quantity","Total copies","number",rec.quantity,1)
+          +fi("available","Available copies","number",rec.available)
+          +fi("location","Location / shelf","text",rec.location)
+          +fi("publisher","Publisher","text",rec.publisher)
+          +fi("year","Year published","number",rec.year)
+          +fi("status","Status","select",rec.status||"In stock",1,["In stock","Low stock","Out of stock","Checked out"])
+          +'</div>';
+      case "bookCats":
+        return '<div class="form-grid">'
+          +fi("name","Category name","text",rec.name,1)
+          +fi("description","Description","textarea",rec.description,0,[],"full")
+          +'</div>';
+      case "bookIssues":
+        return '<div class="form-grid">'
+          +fi("bookTitle","Book title","text",rec.bookTitle,1)
+          +fi("borrowerName","Borrower name","text",rec.borrowerName,1)
+          +fi("borrowerType","Borrower type","select",rec.borrowerType,1,["Pupil","Teacher","Staff"])
+          +fi("borrowerClass","Class (if pupil)","select",rec.borrowerClass,0,KHA.CLASS_LIST)
+          +fi("issueDate","Issue date","date",rec.issueDate||KHA.today(),1)
+          +fi("dueDate","Due date","date",rec.dueDate,1)
+          +fi("returnDate","Return date","date",rec.returnDate)
+          +fi("status","Status","select",rec.status||"Issued",1,["Issued","Returned","Overdue","Lost"])
+          +'</div>';
+      case "buses":
+        return '<div class="form-grid">'
+          +fi("registration","Registration number","text",rec.registration,1)
+          +fi("model","Model / make","text",rec.model,1)
+          +fi("capacity","Seat capacity","number",rec.capacity||40,1)
+          +fi("driver","Assigned driver","text",rec.driver)
+          +fi("route","Assigned route","text",rec.route)
+          +fi("yearOfManufacture","Year of manufacture","number",rec.yearOfManufacture)
+          +fi("insuranceNo","Insurance policy no.","text",rec.insuranceNo)
+          +fi("insuranceExpiry","Insurance expiry","date",rec.insuranceExpiry)
+          +fi("roadLicense","Road licence no.","text",rec.roadLicense)
+          +fi("lastService","Last service date","date",rec.lastService)
+          +fi("nextService","Next service due","date",rec.nextService)
+          +fi("mileage","Current mileage (km)","number",rec.mileage)
+          +fi("status","Status","select",rec.status||"Active",1,["Active","Maintenance","Inactive","Decommissioned"])
+          +'</div>';
+      case "drivers":
+        return '<div class="form-grid">'
+          +fi("name","Full name","text",rec.name,1)
+          +fi("licenseNo","Driving licence no.","text",rec.licenseNo,1)
+          +fi("phone","Phone number","tel",rec.phone,1)
+          +fi("bus","Assigned bus","text",rec.bus)
+          +fi("licenseExpiry","Licence expiry date","date",rec.licenseExpiry)
+          +fi("address","Home address","text",rec.address)
+          +fi("status","Status","select",rec.status||"Active",1,["Active","On leave","Inactive"])
+          +KHA.photoField("photo",rec.photo,"Driver profile photo")
+          +'</div>';
+      case "routes":
+        return '<div class="form-grid">'
+          +fi("name","Route name","text",rec.name,1)
+          +fi("driver","Driver","text",rec.driver,1)
+          +fi("bus","Bus registration","text",rec.bus,1)
+          +fi("fee","Transport fee (UGX)","number",rec.fee)
+          +fi("capacity","Passenger capacity","number",rec.capacity||40)
+          +fi("stops","Pickup / drop-off stops (one per line)","textarea",rec.stops,1,[],"full")
+          +'</div>';
+      case "transport":
+        return '<div class="form-grid">'
+          +fi("name","Pupil full name","text",rec.name,1)
+          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
+          +fi("route","Route","text",rec.route,1)
+          +fi("pickup","Pickup point","text",rec.pickup,1)
+          +fi("dropoff","Drop-off point","text",rec.dropoff,1)
+          +fi("fee","Transport fee (UGX)","number",rec.fee)
+          +fi("guardian","Guardian name","text",rec.guardian)
+          +fi("guardianPhone","Guardian phone","tel",rec.guardianPhone)
+          +fi("status","Status","select",rec.status||"Assigned",1,["Assigned","Pending","Inactive"])
+          +'</div>';
+      default: return '<p>No form defined.</p>';
+    }
+  }
+
+  function fi(name,label,type,value,req,options,extra){
+    var cls="field"+(extra?" "+extra:"");
+    var r=req?" required":""; var inp;
+    if(type==="select"){
+      inp='<select name="'+KHA.esc(name)+'"'+r+'>'
+        +(options||[]).map(function(o){
+            return '<option value="'+KHA.esc(o)+'"'+(value===o?" selected":"")+'>'+KHA.esc(o)+'</option>';
+          }).join("")+'</select>';
+    }else if(type==="textarea"){
+      inp='<textarea name="'+KHA.esc(name)+'"'+r+'>'+KHA.esc(value||"")+'</textarea>';
+    }else{
+      inp='<input name="'+KHA.esc(name)+'" type="'+KHA.esc(type)+'" value="'+KHA.esc(value||"")+'"'+r+'>';
+    }
+    return '<div class="'+cls+'"><label>'+KHA.esc(label)+'</label>'+inp+'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     ROUTE MANIFEST MODAL (printable)
+  ══════════════════════════════════════════════════════ */
+  function openRouteManifest(id){
+    var route = KHA.load(KHA.STORE.routes,[]).find(function(r){ return r.id===id; });
+    if(!route) return;
+    var pupils = KHA.load(KHA.STORE.transport,[]).filter(function(t){ return t.route===route.name; });
+
+    KHA.openModal(
+      '<div class="modal-head"><h2>Route manifest — '+KHA.esc(route.name)+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body">'
+      +'<div style="text-align:center;margin-bottom:12px">'
+      +'<div style="width:44px;height:51px;margin:0 auto 8px">'+KHA.BADGE_SVG+'</div>'
+      +'<strong>'+KHA.esc(KHA.SCHOOL_NAME)+'</strong><br>'
+      +'<p style="font-size:11px;margin:4px 0">Route: <strong>'+KHA.esc(route.name)+'</strong> · Driver: '+KHA.esc(route.driver||"—")
+      +' · Bus: '+KHA.esc(route.bus||"—")+'</p>'
+      +'<p style="font-size:10px;color:var(--muted)">Stops: '+KHA.esc(route.stops||"—")+'</p>'
+      +'</div>'
+      +(pupils.length
+        ? '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+          +'<thead><tr><th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">#</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Pupil</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Adm. #</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Class</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Pickup</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Drop-off</th>'
+          +'</tr></thead><tbody>'
+          +pupils.map(function(p,i){
+              return '<tr><td style="padding:6px;border:1px solid #eee;text-align:center">'+(i+1)+'</td>'
+                +'<td style="padding:6px;border:1px solid #eee">'+KHA.esc(p.name||"—")+'</td>'
+                +'<td style="padding:6px;border:1px solid #eee">'+KHA.esc(p.admission||"—")+'</td>'
+                +'<td style="padding:6px;border:1px solid #eee">'+KHA.esc(p.class||"—")+'</td>'
+                +'<td style="padding:6px;border:1px solid #eee">'+KHA.esc(p.pickup||"—")+'</td>'
+                +'<td style="padding:6px;border:1px solid #eee">'+KHA.esc(p.dropoff||"—")+'</td>'
+                +'</tr>';
+            }).join("")
+          +'</tbody></table>'
+        : '<p style="text-align:center;color:var(--muted);font-size:11px">No pupils assigned to this route.</p>')
+      +'<div class="no-print" style="margin-top:12px"><button class="btn secondary" onclick="window.print()">🖨️ Print manifest</button></div>'
+      +'</div>'
+      +'<div class="modal-foot"><button class="btn secondary" onclick="KHA.closeModal()">Close</button></div>',
+      true);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     MODAL OPENER + SAVE
+  ══════════════════════════════════════════════════════ */
+  function openRecordModal(storeKey,id){
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    var records=KHA.load(storeId,[]);
+    var rec=id?records.find(function(r){ return r.id===id; }):null;
+    var labels={books:"book",bookCats:"category",bookIssues:"book issue",
+                buses:"bus",drivers:"driver",routes:"route",transport:"transport assignment"};
+    KHA.openModal(
+      '<div class="modal-head"><h2>'+(rec?"Edit":"Add new")+" "+KHA.esc(labels[storeKey]||storeKey)+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body"><form id="mForm">'+formForStore(storeKey,rec)+'</form></div>'
+      +'<div class="modal-foot">'
+      +'<button class="btn secondary" onclick="KHA.closeModal()">Cancel</button>'
+      +'<button class="btn success" id="mSave">💾 Save</button></div>',true);
+    KHA.wirePhotoInputs(document.getElementById("kha-modal"));
+    document.getElementById("mSave").addEventListener("click",function(){ saveRecord(storeKey,rec?rec.id:null); });
+  }
+
+  async function saveRecord(storeKey,id){
+    var form=document.getElementById("mForm");
+    var fd=new FormData(form);
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    var records=KHA.load(storeId,[]);
+    var rec={}; fd.forEach(function(v,k){ rec[k]=v; });
+    var photoInput=form.querySelector('input[type="file"]');
+    if(photoInput){ var ph=await KHA.readPhoto(photoInput); if(ph) rec.photo=ph; }
+    if(rec.photo===undefined && id){
+      var old=records.find(function(r){ return r.id===id; });
+      if(old && old.photo) rec.photo=old.photo;
+    }
+    if(!id){ rec.id=KHA.uid(); rec.createdAt=KHA.nowISO(); records.push(rec); }
+    else{
+      rec.id=id;
+      rec.createdAt=(records.find(function(r){return r.id===id;})||{}).createdAt||KHA.nowISO();
+      var idx=records.findIndex(function(r){return r.id===id;});
+      if(idx>-1) records[idx]=rec;
+    }
+    KHA.save(storeId,records);
+    KHA.closeModal();
+    KHA.toast((id?"Updated":"Saved")+" record.","success");
+    renderPage();
+  }
+
+  function deleteRecord(storeKey,id){
+    if(!confirm("Delete this record permanently?")) return;
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    KHA.save(storeId,KHA.load(storeId,[]).filter(function(r){ return r.id!==id; }));
+    KHA.toast("Record deleted.","default");
+    renderPage();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     EVENT WIRING
+  ══════════════════════════════════════════════════════ */
+  function wireEvents(){
+    var content=document.getElementById("kha-content");
+    var ts=document.getElementById("tSearch");
+    if(ts) ts.addEventListener("input",function(){ searchQ=this.value; renderPage(); });
+
+    content.addEventListener("click",function(e){
+      var t=e.target.closest("[data-action],[data-nav-to],[data-edit-record],[data-del-record],[data-view-route]");
+      if(!t) return;
+      if(t.dataset.navTo)        { navigate(t.dataset.navTo); return; }
+      if(t.dataset.action==="addBus")    { openRecordModal("buses",null); return; }
+      if(t.dataset.action==="addRecord") { openRecordModal(t.dataset.store,null); return; }
+      if(t.dataset.editRecord)           { openRecordModal(t.dataset.store,t.dataset.editRecord); return; }
+      if(t.dataset.delRecord)            { deleteRecord(t.dataset.store,t.dataset.delRecord); return; }
+      if(t.dataset.viewRoute)            { openRouteManifest(t.dataset.viewRoute); return; }
+    });
+    KHA.wireParentUpdates(content, "property", session, renderPage);
+    KHA.wireMessages(content, "property", session, renderPage);
+  }
+
+  boot();
+});
+</script>
+</body>
+</html>

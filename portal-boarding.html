@@ -1,0 +1,523 @@
+<!doctype html>
+<!--
+  portal-boarding.html — Boarding & Hostel Portal
+  =================================================
+  Manages the school hostel and dormitory system.
+  Responsibilities:
+    • Create and manage dormitories (Boys / Girls / Mixed)
+    • Register individual beds within each dormitory
+    • Assign pupils to specific beds for each term
+    • Record boarding fees and payment status
+    • Manage house masters and matrons with profile photos
+    • View dormitory occupancy at a glance
+    • Print dormitory lists and bed assignments
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Boarding Portal — Five Star Model School</title>
+  <script src="shared.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+
+KHA.init("boarding", function(session) {
+
+  var page="Dashboard", hist=[], searchQ="";
+
+  function navigate(p){ if(p===page)return; hist.push(page); page=p; searchQ=""; renderPage(); }
+  function goBack(){ if(!hist.length)return; page=hist.pop(); renderPage(); }
+
+  function boot(){
+    KHA.buildShell({
+      roleKey:"boarding", navGroups:KHA.ROLES.boarding.groups,
+      activePage:page, onNav:navigate, session:session,
+      extraRight:'<a href="index.html" class="btn secondary small no-print">All portals</a>'
+    });
+    document.getElementById("kha-back").addEventListener("click",goBack);
+    renderPage();
+  }
+
+  function renderPage(){
+    KHA.setCrumb(page);
+    document.getElementById("kha-back").disabled=!hist.length;
+    var h="";
+    switch(page){
+      case "Dashboard":           h=pgDashboard();      break;
+      case "Dormitories":         h=pgDormitories();    break;
+      case "Beds":                h=pgBeds();           break;
+      case "Boarding assignments":h=pgAssignments();   break;
+      case "House masters":       h=pgHouseMasters();   break;
+      case "Parent updates":      h=KHA.renderParentUpdates("boarding", session); break;
+      case "Messages":            h=KHA.renderMessages("boarding", session); break;
+      default: h=pgDashboard();
+    }
+    KHA.setContent(h);
+    wireEvents();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     DASHBOARD
+  ══════════════════════════════════════════════════════ */
+  function pgDashboard(){
+    var dorms    = KHA.load(KHA.STORE.dormitories,[]);
+    var beds     = KHA.load(KHA.STORE.beds,[]);
+    var assigned = KHA.load(KHA.STORE.boarding,[]).filter(function(b){ return b.status==="Assigned"; });
+    var masters  = KHA.load(KHA.STORE.houseMasters,[]);
+    var totalBeds= beds.length;
+    var occupied = assigned.length;
+    var available= totalBeds-occupied;
+    var boys     = dorms.filter(function(d){ return d.gender==="Boys"; }).length;
+    var girls    = dorms.filter(function(d){ return d.gender==="Girls"; }).length;
+    var occupancyPct = Math.round((occupied/Math.max(totalBeds,1))*100);
+
+    return KHA.pageHead("Boarding Dashboard",
+      "Hostel and dormitory management — "+KHA.CURRENT_YEAR,
+      '<button class="btn small" data-action="addAssignment">+ Assign pupil</button>')
+
+    +'<div class="stats">'
+    +KHA.statCard("🏠","Dormitories",    dorms.length,    boys+" boys · "+girls+" girls", true)
+    +KHA.statCard("🛏️","Total beds",     totalBeds,       "Registered beds")
+    +KHA.statCard("✅","Occupied",        occupied,        occupancyPct+"% occupancy")
+    +KHA.statCard("🔓","Available",       available,       "Beds ready for assignment")
+    +KHA.statCard("👮","House staff",     masters.length,  "Masters & matrons")
+    +'</div>'
+
+    +'<div class="grid2">'
+    /* Occupancy per dormitory */
+    +'<section class="panel"><div class="panel-head"><h2>Occupancy by dormitory</h2></div>'
+    +'<div class="bars">'
+    +(dorms.length
+      ? dorms.map(function(d){
+          var dormBeds     = beds.filter(function(b){ return b.dormitory===d.name; }).length;
+          var dormOccupied = assigned.filter(function(a){ return a.dormitory===d.name; }).length;
+          var pct          = Math.max(4,Math.round((dormOccupied/Math.max(dormBeds,1))*100));
+          var color        = pct>=90?"var(--red)":pct>=70?"var(--amber)":"var(--green)";
+          return '<div class="barline">'
+            +'<span title="'+KHA.esc(d.name)+'">'+KHA.esc(d.name)+'</span>'
+            +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div>'
+            +'<strong>'+dormOccupied+'/'+dormBeds+'</strong></div>';
+        }).join("")
+      : '<div style="padding:16px;font-size:10px;color:var(--muted)">No dormitories created yet.</div>')
+    +'</div></section>'
+
+    /* House staff photos grid */
+    +'<section class="panel"><div class="panel-head"><h2>House staff</h2>'
+    +'<button class="btn secondary small" data-nav-to="House masters">View all →</button></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px">'
+    +(masters.slice(0,6).map(function(m){
+        return '<div style="text-align:center;width:70px">'
+          +(m.photo
+            ?'<img src="'+KHA.esc(m.photo)+'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid var(--line);display:block;margin:0 auto">'
+            :'<span class="avatar" style="margin:0 auto">'+KHA.esc(KHA.initials(m.name))+'</span>')
+          +'<p style="font-size:9px;margin:4px 0;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+KHA.esc(m.name)+'</p>'
+          +'<p style="font-size:8px;color:var(--muted);margin:0">'+KHA.esc(m.role||"")+'</p>'
+          +'</div>';
+      }).join("") || '<p style="font-size:11px;color:var(--muted)">No house staff registered.</p>')
+    +'</div></section>'
+    +'</div>'
+
+    +'<div class="cards">'
+    +qCard("🏠","Dormitories",       "Create and manage dormitories",      "Dormitories")
+    +qCard("🛏️","Beds",              "Register individual beds",            "Beds")
+    +qCard("📋","Bed assignments",   "Assign pupils to beds",              "Boarding assignments")
+    +qCard("👮","House masters",     "Manage house masters and matrons",   "House masters")
+    +'</div>';
+  }
+
+  function qCard(icon,title,desc,navPage){
+    return '<div class="module-card">'
+      +'<div class="mc-icon">'+icon+'</div>'
+      +'<h3>'+KHA.esc(title)+'</h3><p>'+KHA.esc(desc)+'</p>'
+      +'<button class="btn small" data-nav-to="'+KHA.esc(navPage)+'">Open →</button>'
+      +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     DORMITORIES
+  ══════════════════════════════════════════════════════ */
+  function pgDormitories(){
+    var dorms = KHA.load(KHA.STORE.dormitories,[]).filter(function(d){
+      if(!searchQ)return true;
+      return (d.name||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    var beds     = KHA.load(KHA.STORE.beds,[]);
+    var assigned = KHA.load(KHA.STORE.boarding,[]);
+
+    return KHA.pageHead("Dormitories",dorms.length+" dormitor(ies)",
+      '<input class="search" id="tSearch" placeholder="Search dormitory…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="dormitories">+ Create dormitory</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print list</button>')
+
+    /* Occupancy cards */
+    +'<div class="cards" style="margin-bottom:14px">'
+    +(dorms.map(function(d){
+        var dormBeds     = beds.filter(function(b){ return b.dormitory===d.name; }).length;
+        var dormOccupied = assigned.filter(function(a){ return a.dormitory===d.name && a.status==="Assigned"; }).length;
+        var pct          = Math.round((dormOccupied/Math.max(dormBeds,1))*100);
+        var col          = pct>=90?"var(--red)":pct>=70?"var(--amber)":"var(--green)";
+        return '<div class="module-card">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+          +'<h3 style="margin:0 0 4px">'+KHA.esc(d.name)+'</h3>'
+          +'<span class="badge '+(d.gender==="Boys"?"blue":d.gender==="Girls"?"purple":"gray")+'">'+KHA.esc(d.gender||"")+'</span>'
+          +'</div>'
+          +'<p style="margin:4px 0 8px;color:var(--muted)">Master: '+KHA.esc(d.master||"—")+'</p>'
+          +'<div class="bar-track" style="margin-bottom:6px"><div class="bar-fill" style="width:'+Math.max(4,pct)+'%;background:'+col+'"></div></div>'
+          +'<p style="font-size:10px;margin:0">'+dormOccupied+' / '+dormBeds+' beds occupied · '+pct+'%</p>'
+          +'<p style="font-size:10px;color:var(--muted);margin:4px 0 10px">Fee: '+KHA.fmtMoney(d.fee)+'</p>'
+          +'<div style="display:flex;gap:6px">'
+          +'<button class="btn secondary small" data-edit-record="'+KHA.esc(d.id)+'" data-store="dormitories">Edit</button>'
+          +'<button class="btn small" data-nav-to="Beds">View beds</button>'
+          +'</div></div>';
+      }).join("") || '<div class="notice info">No dormitories yet. Click "+ Create dormitory" to start.</div>')
+    +'</div>'
+
+    /* Full table */
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"name",label:"Dormitory"},
+        {key:"gender",label:"Type"},
+        {key:"capacity",label:"Capacity"},
+        {key:"master",label:"House master / matron"},
+        {key:"fee",label:"Boarding fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
+        {key:"status",label:"Status",render:sBadge}
+      ],dorms,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="dormitories" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="dormitories" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BEDS
+  ══════════════════════════════════════════════════════ */
+  function pgBeds(){
+    var rows=KHA.load(KHA.STORE.beds,[]).filter(function(b){
+      if(!searchQ)return true;
+      return (b.dormitory||"").toLowerCase().includes(searchQ.toLowerCase())
+        ||(b.bedNumber||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    /* Group beds by dormitory for a cleaner view */
+    var dorms   = [...new Set(rows.map(function(b){ return b.dormitory||"Unknown"; }))];
+    var assigned= KHA.load(KHA.STORE.boarding,[]).filter(function(a){ return a.status==="Assigned"; });
+
+    return KHA.pageHead("Beds",rows.length+" bed(s)",
+      '<input class="search" id="tSearch" placeholder="Search dormitory or bed no…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="beds">+ Add bed</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print bed list</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"dormitory",label:"Dormitory"},
+        {key:"bedNumber",label:"Bed number",render:function(r){ return '<strong>'+KHA.esc(r.bedNumber||"—")+'</strong>'; }},
+        {key:"occupant",label:"Current occupant",render:function(r){
+          var a=assigned.find(function(x){ return x.bed===r.bedNumber && x.dormitory===r.dormitory; });
+          return a?KHA.esc(a.name)+'<br><small>'+KHA.esc(a.admission||"")+'</small>':'<span style="color:var(--muted)">Vacant</span>';
+        }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="beds" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="beds" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     BOARDING ASSIGNMENTS
+  ══════════════════════════════════════════════════════ */
+  function pgAssignments(){
+    var rows=KHA.load(KHA.STORE.boarding,[]).filter(function(a){
+      if(!searchQ)return true;
+      var q=searchQ.toLowerCase();
+      return (a.name||"").toLowerCase().includes(q)||(a.dormitory||"").toLowerCase().includes(q);
+    });
+    var totalFees = rows.filter(function(a){ return a.status==="Assigned"; })
+      .reduce(function(s,a){ return s+(Number(a.fee)||0); },0);
+
+    return KHA.pageHead("Boarding assignments",
+      rows.length+" assignment(s) · Fees: "+KHA.fmtMoney(totalFees),
+      '<input class="search" id="tSearch" placeholder="Search pupil or dormitory…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="boarding">+ Assign pupil</button>'
+      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print register</button>')
+    +'<div class="table-wrap">'
+    +KHA.buildTable([
+        {key:"name",label:"Pupil"},
+        {key:"admission",label:"Adm. #"},
+        {key:"class",label:"Class"},
+        {key:"gender",label:"Gender"},
+        {key:"dormitory",label:"Dormitory"},
+        {key:"bed",label:"Bed #"},
+        {key:"term",label:"Term"},
+        {key:"fee",label:"Boarding fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
+        {key:"status",label:"Status",render:sBadge}
+      ],rows,function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="boarding" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="boarding" title="Delete">🗑️</button>';
+      })
+    +'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     HOUSE MASTERS & MATRONS
+     Displays staff with profile photos in a card grid + table.
+  ══════════════════════════════════════════════════════ */
+  function pgHouseMasters(){
+    var rows=KHA.load(KHA.STORE.houseMasters,[]).filter(function(m){
+      if(!searchQ)return true;
+      return (m.name||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    var html = KHA.pageHead("House masters & matrons",
+      rows.length+" staff member(s)",
+      '<input class="search" id="tSearch" placeholder="Search name…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="houseMasters">+ Register staff</button>');
+
+    /* Photo card grid */
+    if(rows.length){
+      html += '<div class="cards" style="margin-bottom:14px">';
+      rows.forEach(function(m){
+        html += '<div class="module-card" style="text-align:center">'
+          +'<div style="display:flex;justify-content:center;margin-bottom:10px">'
+          +(m.photo
+            ?'<img src="'+KHA.esc(m.photo)+'" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid var(--line)">'
+            :'<span class="avatar lg">'+KHA.esc(KHA.initials(m.name))+'</span>')
+          +'</div>'
+          +'<strong>'+KHA.esc(m.name)+'</strong><br>'
+          +'<span class="badge '+(m.role==="Matron"?"purple":"blue")+'" style="margin:4px 0">'+KHA.esc(m.role||"Staff")+'</span><br>'
+          +'<small style="color:var(--muted)">'+KHA.esc(m.dormitory||"Unassigned")+'</small><br>'
+          +'<small style="color:var(--muted)">'+KHA.esc(m.phone||"")+'</small>'
+          +sBadge(m)
+          +'<div style="display:flex;gap:6px;justify-content:center;margin-top:10px">'
+          +'<button class="btn secondary small" data-view-master="'+KHA.esc(m.id)+'">View</button>'
+          +'<button class="btn small" data-edit-record="'+KHA.esc(m.id)+'" data-store="houseMasters">Edit</button>'
+          +'</div></div>';
+      });
+      html += '</div>';
+    }
+
+    /* Table view */
+    html += '<div class="table-wrap">'
+      +KHA.buildTable([
+          {key:"photo",label:"",render:function(r){
+            return '<span class="avatar sm">'+(r.photo?'<img src="'+KHA.esc(r.photo)+'" alt="">':KHA.esc(KHA.initials(r.name)))+'</span>';
+          }},
+          {key:"name",label:"Name"},
+          {key:"role",label:"Role",render:function(r){ return '<span class="badge '+(r.role==="Matron"?"purple":"blue")+'">'+KHA.esc(r.role||"")+'</span>'; }},
+          {key:"dormitory",label:"Dormitory"},
+          {key:"phone",label:"Phone"},
+          {key:"status",label:"Status",render:sBadge}
+        ],rows,function(r){
+          return '<button class="btn icon" data-view-master="'+KHA.esc(r.id)+'" title="View">👁</button>'
+            +'<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="houseMasters" title="Edit">✏️</button>'
+            +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="houseMasters" title="Delete">🗑️</button>';
+        })
+      +'</div>';
+    return html;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     STATUS BADGE
+  ══════════════════════════════════════════════════════ */
+  function sBadge(r){
+    var v=r.status||""; var c="gray";
+    if(["Active","Assigned","Available"].includes(v)) c="green";
+    else if(["On leave","Maintenance","Pending"].includes(v)) c="amber";
+    else if(["Inactive","Left","Closed"].includes(v)) c="red";
+    return '<span class="badge '+c+'">'+KHA.esc(v)+'</span>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     FORMS
+  ══════════════════════════════════════════════════════ */
+  function formForStore(storeKey,rec){
+    rec=rec||{};
+    switch(storeKey){
+      case "dormitories":
+        return '<div class="form-grid">'
+          +fi("name","Dormitory name","text",rec.name,1)
+          +fi("gender","Accommodation type","select",rec.gender,1,["Boys","Girls","Mixed"])
+          +fi("ageGroup","Age group","select",rec.ageGroup,0,["Lower (Baby–P3)","Upper (P4–P7)","All ages"])
+          +fi("capacity","Bed capacity","number",rec.capacity,1)
+          +fi("currentOccupancy","Current occupancy","number",rec.currentOccupancy)
+          +fi("master","House master / matron","text",rec.master)
+          +fi("assistant","Assistant master / matron","text",rec.assistant)
+          +fi("phone","Staff contact phone","tel",rec.phone)
+          +fi("fee","Boarding fee per term (UGX)","number",rec.fee)
+          +fi("securityDeposit","Security deposit (UGX)","number",rec.securityDeposit)
+          +fi("facilities","Available facilities","textarea",rec.facilities,0,[],"full")
+          +fi("status","Status","select",rec.status||"Active",1,["Active","Full","Under renovation","Closed"])
+          +'</div>';
+      case "beds":
+        return '<div class="form-grid">'
+          +fi("dormitory","Dormitory","text",rec.dormitory,1)
+          +fi("bedNumber","Bed number / label","text",rec.bedNumber,1)
+          +fi("row","Row / section","text",rec.row)
+          +fi("notes","Notes","text",rec.notes)
+          +fi("status","Status","select",rec.status||"Available",1,["Available","Occupied","Under maintenance","Reserved"])
+          +'</div>';
+      case "boarding":
+        return '<div class="form-grid">'
+          +fi("name","Pupil full name","text",rec.name,1)
+          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
+          +fi("gender","Gender","select",rec.gender,1,["Female","Male"])
+          +fi("dormitory","Dormitory","text",rec.dormitory,1)
+          +fi("bed","Bed number","text",rec.bed,1)
+          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
+          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR)
+          +fi("fee","Boarding fee (UGX)","number",rec.fee)
+          +fi("guardian","Guardian name","text",rec.guardian)
+          +fi("guardianPhone","Guardian phone","tel",rec.guardianPhone)
+          +fi("medicalNotes","Medical notes","textarea",rec.medicalNotes,0,[],"full")
+          +fi("status","Status","select",rec.status||"Assigned",1,["Assigned","Pending","Transferred","Left"])
+          +'</div>';
+      case "houseMasters":
+        return '<div class="form-grid">'
+          +fi("name","Full name","text",rec.name,1)
+          +fi("role","Role","select",rec.role,1,["House master","Matron","Assistant house master","Assistant matron"])
+          +fi("dormitory","Assigned dormitory","text",rec.dormitory,1)
+          +fi("phone","Phone number","tel",rec.phone,1)
+          +fi("email","Email","email",rec.email)
+          +fi("qualification","Qualification","text",rec.qualification)
+          +fi("employmentDate","Employment date","date",rec.employmentDate)
+          +fi("address","Home address","text",rec.address)
+          +fi("status","Status","select",rec.status||"Active",1,["Active","On leave","Inactive"])
+          +KHA.photoField("photo",rec.photo,"Profile photo (passport size)")
+          +'</div>';
+      default: return '<p>No form defined.</p>';
+    }
+  }
+
+  function fi(name,label,type,value,req,options,extra){
+    var cls="field"+(extra?" "+extra:"");
+    var r=req?" required":""; var inp;
+    if(type==="select"){
+      inp='<select name="'+KHA.esc(name)+'"'+r+'>'
+        +(options||[]).map(function(o){
+            return '<option value="'+KHA.esc(o)+'"'+(value===o?" selected":"")+'>'+KHA.esc(o)+'</option>';
+          }).join("")+'</select>';
+    }else if(type==="textarea"){
+      inp='<textarea name="'+KHA.esc(name)+'"'+r+'>'+KHA.esc(value||"")+'</textarea>';
+    }else{
+      inp='<input name="'+KHA.esc(name)+'" type="'+KHA.esc(type)+'" value="'+KHA.esc(value||"")+'"'+r+'>';
+    }
+    return '<div class="'+cls+'"><label>'+KHA.esc(label)+'</label>'+inp+'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     VIEW HOUSE MASTER PROFILE MODAL
+  ══════════════════════════════════════════════════════ */
+  function openViewMaster(id){
+    var m=KHA.load(KHA.STORE.houseMasters,[]).find(function(x){ return x.id===id; });
+    if(!m) return;
+    KHA.openModal(
+      '<div class="modal-head"><h2>Staff profile — '+KHA.esc(m.name)+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body">'
+      +'<div style="display:flex;gap:18px;align-items:flex-start;margin-bottom:16px">'
+      +(m.photo
+        ?'<img src="'+KHA.esc(m.photo)+'" style="width:90px;height:110px;object-fit:cover;border-radius:8px;border:2px solid var(--line)">'
+        :'<span class="avatar xl">'+KHA.esc(KHA.initials(m.name))+'</span>')
+      +'<div>'
+      +'<h3 style="margin:0 0 4px">'+KHA.esc(m.name)+'</h3>'
+      +'<span class="badge '+(m.role==="Matron"?"purple":"blue")+'">'+KHA.esc(m.role||"")+'</span><br>'
+      +'<p style="margin:6px 0 0;color:var(--muted);font-size:11px">'+KHA.esc(m.dormitory||"No dormitory assigned")+'</p>'
+      +sBadge(m)
+      +'</div></div>'
+      +'<table style="width:100%;font-size:11px;border-collapse:collapse">'
+      +[["Phone",m.phone],["Email",m.email],["Qualification",m.qualification],
+        ["Employment date",KHA.fmtDate(m.employmentDate)],["Address",m.address]]
+       .filter(function(row){ return row[1]; })
+       .map(function(row){
+          return '<tr><td style="padding:5px 12px 5px 0;color:var(--muted);font-weight:700;width:130px">'+KHA.esc(row[0])+'</td>'
+            +'<td>'+KHA.esc(row[1])+'</td></tr>';
+        }).join("")
+      +'</table>'
+      +'</div>'
+      +'<div class="modal-foot">'
+      +'<button class="btn secondary" onclick="KHA.closeModal()">Close</button>'
+      +'<button class="btn" data-edit-record="'+KHA.esc(m.id)+'" data-store="houseMasters" onclick="KHA.closeModal()">Edit</button>'
+      +'</div>');
+  }
+
+  /* ══════════════════════════════════════════════════════
+     MODAL OPENER + SAVE
+  ══════════════════════════════════════════════════════ */
+  function openRecordModal(storeKey,id){
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    var records=KHA.load(storeId,[]);
+    var rec=id?records.find(function(r){ return r.id===id; }):null;
+    var labels={dormitories:"dormitory",beds:"bed",boarding:"boarding assignment",houseMasters:"house staff"};
+    KHA.openModal(
+      '<div class="modal-head"><h2>'+(rec?"Edit":"Add new")+" "+KHA.esc(labels[storeKey]||storeKey)+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body"><form id="mForm">'+formForStore(storeKey,rec)+'</form></div>'
+      +'<div class="modal-foot">'
+      +'<button class="btn secondary" onclick="KHA.closeModal()">Cancel</button>'
+      +'<button class="btn success" id="mSave">💾 Save</button></div>',true);
+    KHA.wirePhotoInputs(document.getElementById("kha-modal"));
+    document.getElementById("mSave").addEventListener("click",function(){ saveRecord(storeKey,rec?rec.id:null); });
+  }
+
+  async function saveRecord(storeKey,id){
+    var form=document.getElementById("mForm");
+    var fd=new FormData(form);
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    var records=KHA.load(storeId,[]);
+    var rec={}; fd.forEach(function(v,k){ rec[k]=v; });
+    /* Preserve existing photo if no new one uploaded */
+    var photoInput=form.querySelector('input[type="file"]');
+    if(photoInput){ var ph=await KHA.readPhoto(photoInput); if(ph) rec.photo=ph; }
+    if(!rec.photo && id){
+      var old=records.find(function(r){ return r.id===id; });
+      if(old && old.photo) rec.photo=old.photo;
+    }
+    if(!id){ rec.id=KHA.uid(); rec.createdAt=KHA.nowISO(); records.push(rec); }
+    else{
+      rec.id=id;
+      rec.createdAt=(records.find(function(r){return r.id===id;})||{}).createdAt||KHA.nowISO();
+      var idx=records.findIndex(function(r){return r.id===id;});
+      if(idx>-1) records[idx]=rec;
+    }
+    KHA.save(storeId,records);
+    KHA.closeModal();
+    KHA.toast((id?"Updated":"Saved")+" record.","success");
+    renderPage();
+  }
+
+  function deleteRecord(storeKey,id){
+    if(!confirm("Delete this record permanently?")) return;
+    var storeId=KHA.STORE[storeKey]||storeKey;
+    KHA.save(storeId,KHA.load(storeId,[]).filter(function(r){ return r.id!==id; }));
+    KHA.toast("Record deleted.","default");
+    renderPage();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     EVENT WIRING
+  ══════════════════════════════════════════════════════ */
+  function wireEvents(){
+    var content=document.getElementById("kha-content");
+    var ts=document.getElementById("tSearch");
+    if(ts) ts.addEventListener("input",function(){ searchQ=this.value; renderPage(); });
+
+    content.addEventListener("click",function(e){
+      var t=e.target.closest("[data-action],[data-nav-to],[data-edit-record],[data-del-record],[data-view-master]");
+      if(!t) return;
+      if(t.dataset.navTo)                              { navigate(t.dataset.navTo); return; }
+      if(t.dataset.action==="addAssignment")           { openRecordModal("boarding",null); return; }
+      if(t.dataset.action==="addRecord")               { openRecordModal(t.dataset.store,null); return; }
+      if(t.dataset.editRecord)                         { openRecordModal(t.dataset.store,t.dataset.editRecord); return; }
+      if(t.dataset.delRecord)                          { deleteRecord(t.dataset.store,t.dataset.delRecord); return; }
+      if(t.dataset.viewMaster)                         { openViewMaster(t.dataset.viewMaster); return; }
+    });
+    KHA.wireParentUpdates(content, "boarding", session, renderPage);
+    KHA.wireMessages(content, "boarding", session, renderPage);
+  }
+
+  boot();
+});
+</script>
+</body>
+</html>

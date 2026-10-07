@@ -1,0 +1,746 @@
+<!doctype html>
+<!--
+  portal-registrar.html — Registrar Portal
+  ==========================================
+  Handles all student admissions and enrollment.
+  This portal lets the Registrar:
+    • Register new pupils (with passport photo, parent details, medical info)
+    • Edit and view full student profiles
+    • Assign pupils to classes and streams
+    • Record student transfers (in and out)
+    • Print / export an admissions summary report
+    • Search and filter the student register
+
+  Authentication: Requires a "registrar" role account from shared.js auth.
+  Data storage:   Uses KHA.STORE.students (kha_students) in localStorage.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Registrar Portal — Five Star Model School</title>
+  <script src="shared.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+/*
+ * KHA.init("registrar", fn) checks sessionStorage for a valid "registrar"
+ * session.  If none exists it renders the login screen from shared.js.
+ * If authenticated it calls our boot function with the session object.
+ */
+KHA.init("registrar", function (session) {
+
+  /* ════════════════════════════════════════════════════════════════════
+     STATE
+     All mutable state for this portal lives here (no globals outside).
+  ════════════════════════════════════════════════════════════════════ */
+
+  var page        = "Dashboard"; // Currently displayed page name
+  var pageHistory = [];          // Navigation stack for the back button
+  var searchQ     = "";          // Live search query string
+  var filterClass = "";          // Active class filter (P.1 … P.7)
+  var filterStatus= "";          // Active status filter
+
+  /* ════════════════════════════════════════════════════════════════════
+     NAVIGATION
+  ════════════════════════════════════════════════════════════════════ */
+
+  /** Navigate to a new page, pushing the current one onto the back-stack. */
+  function navigate(p) {
+    if (p === page) return;
+    pageHistory.push(page);
+    page = p;
+    searchQ = ""; filterClass = ""; filterStatus = "";
+    renderPage();
+  }
+
+  /** Pop the history stack and go back one page. */
+  function goBack() {
+    if (!pageHistory.length) return;
+    page = pageHistory.pop();
+    renderPage();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     BOOT
+     Called once after authentication succeeds.
+     Builds the sidebar/topbar shell then renders the first page.
+  ════════════════════════════════════════════════════════════════════ */
+  function boot() {
+    KHA.buildShell({
+      roleKey:    "registrar",
+      navGroups:  KHA.ROLES.registrar.groups,
+      activePage: page,
+      onNav:      navigate,
+      session:    session,
+      /* Link back to the portal hub in the topbar */
+      extraRight: '<a href="index.html" class="btn secondary small no-print" title="Return to portal hub">All portals</a>'
+    });
+    /* Wire the back button (built by buildShell) */
+    document.getElementById("kha-back").addEventListener("click", goBack);
+    renderPage();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE DISPATCHER
+     Calls the correct page-render function and updates the UI chrome.
+  ════════════════════════════════════════════════════════════════════ */
+  function renderPage() {
+    KHA.setCrumb(page); // Update breadcrumb and active nav item
+    document.getElementById("kha-back").disabled = !pageHistory.length;
+
+    var html = "";
+    switch (page) {
+      case "Dashboard":        html = pageDashboard();       break;
+      case "Students":         html = pageStudents();        break;
+      case "Student transfers":html = pageTransfers();       break;
+      case "Admissions report":html = pageReport();          break;
+      case "Parent updates":   html = KHA.renderParentUpdates("registrar", session); break;
+      case "Messages":         html = KHA.renderMessages("registrar", session); break;
+      default:                 html = pageDashboard();
+    }
+    KHA.setContent(html);
+    wirePageEvents(); // Attach event listeners after innerHTML is set
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     DASHBOARD
+     Shows summary statistics and quick-action cards for the Registrar.
+  ════════════════════════════════════════════════════════════════════ */
+  function pageDashboard() {
+    var students  = KHA.load(KHA.STORE.students, []);
+    var active    = students.filter(function (s) { return s.status === "Active"; }).length;
+    var male      = students.filter(function (s) { return s.gender === "Male"; }).length;
+    var female    = students.filter(function (s) { return s.gender === "Female"; }).length;
+    var transfers = students.filter(function (s) { return s.status === "Transferred"; }).length;
+
+    // Recent admissions (last 5 records by createdAt)
+    var recent = students.slice().sort(function (a, b) {
+      return (b.createdAt || "").localeCompare(a.createdAt || "");
+    }).slice(0, 6);
+
+    // Class distribution — uses KHA.CLASS_LIST which includes Baby, Middle, Top class + P.1–P.7
+    var classBars = KHA.CLASS_LIST.map(function (c) {
+      var n = students.filter(function (s) { return s.class === c && s.status === "Active"; }).length;
+      var maxN = Math.max.apply(null, KHA.CLASS_LIST.map(function (x) {
+        return students.filter(function (s) { return s.class === x; }).length;
+      }).concat([1]));
+      return '<div class="barline"><span>' + c + '</span>'
+        + '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, Math.round((n / maxN) * 100)) + '%"></div></div>'
+        + '<strong>' + n + '</strong></div>';
+    }).join("");
+
+    return KHA.pageHead(
+      "Registrar Dashboard",
+      "Student admissions and enrollment overview — " + KHA.CURRENT_YEAR,
+      '<button class="btn small" data-action="registerStudent">+ Register new pupil</button>'
+    )
+    + '<div class="stats">'
+    + KHA.statCard("🎓", "Active pupils",    active,    male + " male · " + female + " female", true)
+    + KHA.statCard("👦", "Male pupils",      male,      "Boys enrolled")
+    + KHA.statCard("👧", "Female pupils",    female,    "Girls enrolled")
+    + KHA.statCard("🔄", "Transferred out",  transfers, "Students who have left")
+    + KHA.statCard("📋", "Total records",    students.length, "All admissions ever recorded")
+    + '</div>'
+
+    + '<div class="grid2">'
+    /* Class distribution chart */
+    + '<section class="panel">'
+    +   '<div class="panel-head"><h2>Enrolment by class</h2><small>Active pupils per class</small></div>'
+    +   '<div class="bars">' + classBars + '</div>'
+    + '</section>'
+    /* Recent admissions feed */
+    + '<section class="panel">'
+    +   '<div class="panel-head"><h2>Recent admissions</h2><small>Last registered pupils</small></div>'
+    +   '<div class="activities">'
+    +   (recent.length
+        ? recent.map(function (s) {
+            return '<div class="activity">'
+              + '<span class="act-ico">'
+              + (s.photo ? '<img src="' + KHA.esc(s.photo) + '" style="width:28px;height:28px;border-radius:50%;object-fit:cover">' : '🎓')
+              + '</span>'
+              + '<div><p><strong>' + KHA.esc(s.name) + '</strong> — ' + KHA.esc(s.class || "—") + (s.stream ? " " + KHA.esc(s.stream) : "") + '</p>'
+              + '<time>' + KHA.fmtDate(s.createdAt) + ' · Adm: ' + KHA.esc(s.admission || "—") + '</time></div>'
+              + '</div>';
+          }).join("")
+        : '<div class="empty"><strong>No pupils registered yet</strong>Click "Register new pupil" to start.</div>')
+    +   '</div>'
+    + '</section>'
+    + '</div>'
+
+    /* Quick action cards */
+    + '<div class="cards">'
+    + quickCard("🎓", "Register pupil",   "Enroll a new pupil with photo and parent details", "registerStudent", "#168560")
+    + quickCard("🔍", "Student register", "View and search all pupil records",                null, "#4863de", "Students")
+    + quickCard("🔄", "Transfers",        "Record a student transfer in or out",              "addTransfer",    "#b45309")
+    + quickCard("📊", "Admissions report","Print or export the school admissions summary",     null, "#7c3aed", "Admissions report")
+    + '</div>';
+  }
+
+  function quickCard(icon, title, desc, action, color, navPage) {
+    var btn = navPage
+      ? '<button class="pc-btn btn" data-nav-to="' + KHA.esc(navPage) + '" style="background:' + color + ';margin-top:auto">Open →</button>'
+      : '<button class="pc-btn btn" data-action="' + KHA.esc(action) + '" style="background:' + color + ';margin-top:auto">Open →</button>';
+    return '<div class="module-card" style="display:flex;flex-direction:column">'
+      + '<div class="mc-icon">' + icon + '</div>'
+      + '<h3>' + KHA.esc(title) + '</h3>'
+      + '<p>' + KHA.esc(desc) + '</p>'
+      + btn + '</div>';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STUDENT REGISTER PAGE
+     Full searchable, filterable table of all pupils with edit / view / delete.
+  ════════════════════════════════════════════════════════════════════ */
+  function pageStudents() {
+    var all = KHA.load(KHA.STORE.students, []);
+
+    // Apply search query filter
+    var rows = all.filter(function (s) {
+      if (!searchQ) return true;
+      var q = searchQ.toLowerCase();
+      return (s.name || "").toLowerCase().includes(q)
+        || (s.admission || "").toLowerCase().includes(q)
+        || (s.guardian || "").toLowerCase().includes(q);
+    });
+
+    // Apply class filter
+    if (filterClass)  rows = rows.filter(function (s) { return s.class === filterClass; });
+    // Apply status filter
+    if (filterStatus) rows = rows.filter(function (s) { return s.status === filterStatus; });
+
+    var html = KHA.pageHead(
+      "Student Register",
+      rows.length + " pupil(s) shown · " + all.length + " total",
+      '<button class="btn small" data-action="registerStudent">+ Register pupil</button>'
+      + '<button class="btn secondary small no-print" data-action="exportCSV">⬇ Export CSV</button>'
+    );
+
+    /* Search and filter toolbar */
+    html += '<div class="filters" style="margin-bottom:12px">'
+      + '<input class="search" id="sSearch" placeholder="Search by name or admission no…" value="' + KHA.esc(searchQ) + '" style="width:260px">'
+      + '<select class="search" id="sClass">'
+      +   '<option value="">All classes</option>'
+      +   KHA.CLASS_LIST.map(function (c) {
+            return '<option value="' + c + '"' + (filterClass === c ? " selected" : "") + '>' + c + '</option>';
+          }).join("")
+      + '</select>'
+      + '<select class="search" id="sStatus">'
+      +   '<option value="">All statuses</option>'
+      +   ["Active","Transferred","Graduated","Inactive"].map(function (s) {
+            return '<option value="' + s + '"' + (filterStatus === s ? " selected" : "") + '>' + s + '</option>';
+          }).join("")
+      + '</select>'
+      + '</div>';
+
+    html += '<div class="table-wrap">'
+      + KHA.buildTable(
+          [
+            /* Photo column — shows avatar or passport photo thumbnail */
+            { key: "photo", label: "", render: function (r) {
+                return '<span class="avatar sm">'
+                  + (r.photo ? '<img src="' + KHA.esc(r.photo) + '" alt="' + KHA.esc(r.name) + '">' : KHA.esc(KHA.initials(r.name)))
+                  + '</span>';
+            }},
+            /* Name + admission number combined */
+            { key: "name", label: "Pupil", render: function (r) {
+                return '<div class="person">'
+                  + '<div><strong>' + KHA.esc(r.name) + '</strong>'
+                  + '<small>' + KHA.esc(r.admission || "—") + '</small></div>'
+                  + '</div>';
+            }},
+            { key: "gender",   label: "Gender" },
+            /* Class + stream */
+            { key: "class", label: "Class", render: function (r) {
+                return KHA.esc(r.class || "—") + (r.stream ? " " + KHA.esc(r.stream) : "");
+            }},
+            /* Parent/guardian name + phone */
+            { key: "guardian", label: "Guardian", render: function (r) {
+                return '<div><strong>' + KHA.esc(r.guardian || "—") + '</strong>'
+                  + '<br><small style="color:var(--muted)">' + KHA.esc(r.guardianPhone || r.phone || "—") + '</small></div>';
+            }},
+            { key: "admissionDate", label: "Admitted", render: function (r) {
+                return KHA.fmtDate(r.admissionDate || r.createdAt);
+            }},
+            /* Coloured status badge */
+            { key: "status", label: "Status", render: statusBadge }
+          ],
+          rows,
+          /* Action buttons per row */
+          function (r) {
+            return '<button class="btn icon" data-view-student="' + KHA.esc(r.id) + '" title="View profile">👁</button>'
+              + '<button class="btn icon" data-edit-student="' + KHA.esc(r.id) + '" title="Edit record">✏️</button>'
+              + '<button class="btn icon danger" data-del-student="' + KHA.esc(r.id) + '" title="Delete record">🗑️</button>';
+          }
+        )
+      + '</div>';
+
+    return html;
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STUDENT TRANSFERS PAGE
+     Displays pupils whose status is "Transferred" or where transfer
+     details have been filled in.
+  ════════════════════════════════════════════════════════════════════ */
+  function pageTransfers() {
+    var transfers = KHA.load(KHA.STORE.students, []).filter(function (s) {
+      return s.status === "Transferred" || s.transferDate;
+    });
+
+    return KHA.pageHead(
+      "Student transfers",
+      transfers.length + " transfer record(s)",
+      '<button class="btn small" data-action="registerStudent">+ Register transfer</button>'
+    )
+    + '<div class="notice info">This view shows pupils whose enrollment status has been set to "Transferred". '
+    + 'Edit a pupil\'s record and change their status to record a transfer.</div>'
+    + '<div class="table-wrap">'
+    + KHA.buildTable(
+        [
+          { key: "name",      label: "Pupil" },
+          { key: "admission", label: "Adm. #" },
+          { key: "class",     label: "Class" },
+          { key: "transferDate", label: "Transfer date", render: function (r) { return KHA.fmtDate(r.transferDate || r.updatedAt); }},
+          { key: "transferReason", label: "Reason" },
+          { key: "status",    label: "Status", render: statusBadge }
+        ],
+        transfers,
+        function (r) {
+          return '<button class="btn icon" data-edit-student="' + KHA.esc(r.id) + '" title="Edit">✏️</button>';
+        }
+      )
+    + '</div>';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     ADMISSIONS REPORT PAGE
+     Printable summary of the school's enrollment statistics.
+  ════════════════════════════════════════════════════════════════════ */
+  function pageReport() {
+    var students = KHA.load(KHA.STORE.students, []);
+    var byClass  = {};
+    // Loop over the full class list including nursery levels
+    KHA.CLASS_LIST.forEach(function (c) {
+      byClass[c] = {
+        total:  students.filter(function (s) { return s.class === c; }).length,
+        male:   students.filter(function (s) { return s.class === c && s.gender === "Male"; }).length,
+        female: students.filter(function (s) { return s.class === c && s.gender === "Female"; }).length
+      };
+    });
+
+    var html = KHA.pageHead(
+      "Admissions report",
+      "School enrollment summary — " + KHA.CURRENT_YEAR,
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print report</button>'
+    );
+
+    html += '<section class="panel" style="max-width:700px">'
+      + '<div class="panel-head"><h2>Enrollment by class</h2></div>'
+      + '<div class="panel-body">'
+      + '<table style="width:100%;font-size:11px;border-collapse:collapse">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:8px;border-bottom:2px solid #dde3ec">Class</th>'
+      + '<th style="text-align:center;padding:8px;border-bottom:2px solid #dde3ec">Boys</th>'
+      + '<th style="text-align:center;padding:8px;border-bottom:2px solid #dde3ec">Girls</th>'
+      + '<th style="text-align:center;padding:8px;border-bottom:2px solid #dde3ec">Total</th>'
+      + '</tr></thead><tbody>';
+
+    var grandTotal = 0; var grandM = 0; var grandF = 0;
+    Object.entries(byClass).forEach(function (entry) {
+      var c = entry[0]; var d = entry[1];
+      grandTotal += d.total; grandM += d.male; grandF += d.female;
+      html += '<tr>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f0f2f5;font-weight:600">' + KHA.esc(c) + '</td>'
+        + '<td style="text-align:center;padding:7px 8px;border-bottom:1px solid #f0f2f5">' + d.male + '</td>'
+        + '<td style="text-align:center;padding:7px 8px;border-bottom:1px solid #f0f2f5">' + d.female + '</td>'
+        + '<td style="text-align:center;padding:7px 8px;border-bottom:1px solid #f0f2f5;font-weight:700">' + d.total + '</td>'
+        + '</tr>';
+    });
+    html += '<tr style="background:#f9fafb;font-weight:700">'
+      + '<td style="padding:8px">TOTAL</td>'
+      + '<td style="text-align:center;padding:8px">' + grandM + '</td>'
+      + '<td style="text-align:center;padding:8px">' + grandF + '</td>'
+      + '<td style="text-align:center;padding:8px">' + grandTotal + '</td>'
+      + '</tr>'
+      + '</tbody></table>'
+      + '<p style="font-size:10px;color:var(--muted);margin-top:10px">Report generated: '
+      + new Date().toLocaleString() + ' by ' + KHA.esc(session.name) + '</p>'
+      + '</div></section>';
+
+    return html;
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STATUS BADGE
+     Returns a colour-coded <span> for a record's status field.
+  ════════════════════════════════════════════════════════════════════ */
+  function statusBadge(r) {
+    var v   = r.status || "";
+    var cls = "gray";
+    if (["Active"].includes(v))                        cls = "green";
+    else if (["Pending"].includes(v))                  cls = "blue";
+    else if (["Transferred","Graduated"].includes(v))  cls = "amber";
+    else if (["Inactive","Suspended"].includes(v))     cls = "red";
+    return '<span class="badge ' + cls + '">' + KHA.esc(v) + '</span>';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STUDENT REGISTRATION FORM
+     Generates the modal form HTML for add / edit.
+     rec is the existing record object (null for a new registration).
+  ════════════════════════════════════════════════════════════════════ */
+  function studentForm(rec) {
+    rec = rec || {}; // Default to empty object for new registrations
+
+    return '<div class="form-grid">'
+
+      /* ── Personal information ── */
+      + '<div class="section-title">Personal information</div>'
+      + fld("name",          "Full name (as on birth certificate)", "text",   rec.name,          true)
+      + fld("admission",     "Admission number",                    "text",   rec.admission,     true)
+      + fld("gender",        "Gender",                              "select", rec.gender,        true,  ["Female","Male"])
+      + fld("dateOfBirth",   "Date of birth",                       "date",   rec.dateOfBirth)
+      + fld("nationality",   "Nationality",                         "text",   rec.nationality || "Ugandan")
+      + fld("religion",      "Religion",                            "text",   rec.religion)
+      + fld("bloodGroup",    "Blood group",                         "select", rec.bloodGroup, false, ["Unknown","A+","A-","B+","B-","AB+","AB-","O+","O-"])
+
+      /* ── Class assignment ── */
+      + '<div class="section-title">Class assignment</div>'
+      + fld("class", "Class", "select", rec.class, true, KHA.CLASS_LIST)
+      + fld("stream",        "Stream",                              "select", rec.stream,        false, ["A","B","C"])
+      + fld("admissionDate", "Date of admission",                   "date",   rec.admissionDate || KHA.today(), true)
+      + fld("status",        "Enrollment status",                   "select", rec.status || "Active", true, ["Active","Inactive","Transferred","Graduated","Suspended"])
+      + fld("previousSchool","Previous school attended",            "text",   rec.previousSchool)
+
+      /* ── Parent / guardian ── */
+      + '<div class="section-title">Parent / guardian</div>'
+      + fld("guardian",      "Parent / guardian full name",         "text",   rec.guardian,      true)
+      + fld("guardianPhone", "Guardian phone number",               "tel",    rec.guardianPhone, true)
+      + fld("guardianEmail", "Guardian email",                      "email",  rec.guardianEmail)
+      + fld("guardianOccupation","Guardian occupation",             "text",   rec.guardianOccupation)
+      + fld("address",       "Home address / village",              "text",   rec.address,       false, [], "full")
+      + fld("emergencyContact","Emergency contact name",            "text",   rec.emergencyContact)
+      + fld("emergencyPhone","Emergency contact phone",             "tel",    rec.emergencyPhone)
+
+      /* ── Medical information ── */
+      + '<div class="section-title">Medical information</div>'
+      + fld("allergies",     "Known allergies",                     "textarea", rec.allergies,   false, [], "full")
+      + fld("medications",   "Current medications",                 "textarea", rec.medications, false, [], "full")
+      + fld("specialNeeds",  "Special educational needs",           "textarea", rec.specialNeeds, false, [], "full")
+
+      /* ── Transfers ── */
+      + '<div class="section-title">Transfer details (if applicable)</div>'
+      + fld("transferDate",  "Transfer date",                       "date",   rec.transferDate)
+      + fld("transferReason","Reason for transfer",                 "textarea",rec.transferReason,false,[],  "full")
+
+      /* ── Passport photo ── */
+      + '<div class="section-title">Passport photo</div>'
+      + KHA.photoField("photo", rec.photo, "Pupil passport photo (appears on report cards)")
+
+      + '</div>'; // .form-grid
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     FORM FIELD HELPER
+     Renders a single .field div with label + input/select/textarea.
+     name:     <input name> attribute
+     label:    Label text shown above the input
+     type:     "text" | "number" | "date" | "tel" | "email" | "select" | "textarea"
+     value:    Current value (for edit forms)
+     required: If true, adds the HTML required attribute
+     options:  Array of option strings (for select type)
+     extra:    Extra CSS class on the .field wrapper (e.g. "full")
+  ════════════════════════════════════════════════════════════════════ */
+  function fld(name, label, type, value, required, options, extra) {
+    var cls = "field" + (extra ? " " + extra : "");
+    var req = required ? " required" : "";
+    var inner;
+
+    if (type === "select") {
+      inner = '<select name="' + KHA.esc(name) + '"' + req + '>'
+        + (options || []).map(function (o) {
+            return '<option value="' + KHA.esc(o) + '"' + (value === o ? " selected" : "") + '>' + KHA.esc(o) + '</option>';
+          }).join("")
+        + '</select>';
+    } else if (type === "textarea") {
+      inner = '<textarea name="' + KHA.esc(name) + '"' + req + '>' + KHA.esc(value || "") + '</textarea>';
+    } else {
+      inner = '<input name="' + KHA.esc(name) + '" type="' + KHA.esc(type) + '" value="' + KHA.esc(value || "") + '"' + req + '>';
+    }
+
+    return '<div class="' + cls + '"><label>' + KHA.esc(label) + '</label>' + inner + '</div>';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     MODAL: OPEN STUDENT FORM
+     Opens the add/edit modal for a student record.
+     id is null for a new registration; an existing record id for editing.
+  ════════════════════════════════════════════════════════════════════ */
+  function openStudentModal(id) {
+    var students = KHA.load(KHA.STORE.students, []);
+    var rec      = id ? students.find(function (r) { return r.id === id; }) : null;
+
+    KHA.openModal(
+      '<div class="modal-head">'
+      +   '<h2>' + (rec ? "Edit pupil record" : "Register new pupil") + '</h2>'
+      +   '<button class="btn icon" onclick="KHA.closeModal()" aria-label="Close">✕</button>'
+      + '</div>'
+      + '<div class="modal-body">'
+      +   '<form id="studentForm" novalidate>' + studentForm(rec) + '</form>'
+      + '</div>'
+      + '<div class="modal-foot">'
+      +   '<button class="btn secondary" onclick="KHA.closeModal()">Cancel</button>'
+      +   '<button class="btn success" id="saveStudentBtn">💾 Save pupil record</button>'
+      + '</div>',
+      true // wide modal
+    );
+
+    /* Wire photo preview inside the modal */
+    KHA.wirePhotoInputs(document.getElementById("kha-modal"));
+
+    document.getElementById("saveStudentBtn").addEventListener("click", function () {
+      saveStudent(rec ? rec.id : null);
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     MODAL: VIEW STUDENT PROFILE
+     Read-only view of all pupil details in a modal.
+  ════════════════════════════════════════════════════════════════════ */
+  function openStudentProfile(id) {
+    var students = KHA.load(KHA.STORE.students, []);
+    var s        = students.find(function (r) { return r.id === id; });
+    if (!s) return;
+
+    KHA.openModal(
+      '<div class="modal-head">'
+      +   '<h2>Pupil profile — ' + KHA.esc(s.name) + '</h2>'
+      +   '<button class="btn icon" onclick="KHA.closeModal()" aria-label="Close">✕</button>'
+      + '</div>'
+      + '<div class="modal-body" style="display:grid;grid-template-columns:90px 1fr;gap:20px;padding-top:16px">'
+      /* Passport photo */
+      +   '<div>'
+      +     (s.photo
+            ? '<img src="' + KHA.esc(s.photo) + '" style="width:90px;height:110px;object-fit:cover;border-radius:8px;border:2px solid var(--line)">'
+            : '<span class="avatar xl">' + KHA.esc(KHA.initials(s.name)) + '</span>')
+      +   '</div>'
+      /* Details */
+      +   '<div>'
+      +     '<h3 style="margin:0 0 4px">' + KHA.esc(s.name) + '</h3>'
+      +     '<p style="margin:0 0 8px;color:var(--muted);font-size:11px">Admission: ' + KHA.esc(s.admission || "—") + '</p>'
+      +     statusBadge(s)
+      +   '</div>'
+      +   '<div style="grid-column:1/-1">'
+      +     infoTable([
+              ["Class / Stream",  (s.class||"—") + (s.stream?" "+s.stream:"")],
+              ["Gender",          s.gender],
+              ["Date of birth",   KHA.fmtDate(s.dateOfBirth)],
+              ["Nationality",     s.nationality],
+              ["Religion",        s.religion],
+              ["Blood group",     s.bloodGroup],
+              ["Admitted",        KHA.fmtDate(s.admissionDate)],
+              ["Previous school", s.previousSchool],
+              ["Guardian",        s.guardian],
+              ["Guardian phone",  s.guardianPhone || s.phone],
+              ["Guardian email",  s.guardianEmail],
+              ["Address",         s.address],
+              ["Emergency contact", s.emergencyContact + (s.emergencyPhone ? " · " + s.emergencyPhone : "")],
+              ["Allergies",       s.allergies],
+              ["Medications",     s.medications],
+              ["Special needs",   s.specialNeeds]
+            ])
+      +   '</div>'
+      + '</div>'
+      + '<div class="modal-foot">'
+      +   '<button class="btn secondary" onclick="KHA.closeModal()">Close</button>'
+      +   '<button class="btn" data-edit-student="' + KHA.esc(s.id) + '" onclick="KHA.closeModal()">Edit record</button>'
+      + '</div>',
+      true
+    );
+  }
+
+  /** Render a two-column info table for a student's profile view */
+  function infoTable(rows) {
+    return '<table style="width:100%;font-size:11px;border-collapse:collapse">'
+      + rows.filter(function (r) { return r[1]; }).map(function (r) {
+          return '<tr>'
+            + '<td style="padding:5px 10px 5px 0;color:var(--muted);font-weight:700;width:140px;vertical-align:top">' + KHA.esc(r[0]) + '</td>'
+            + '<td style="padding:5px 0;color:var(--ink)">' + KHA.esc(r[1] || "—") + '</td>'
+            + '</tr>';
+        }).join("")
+      + '</table>';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     SAVE STUDENT RECORD
+     Reads the form data, attaches the photo data-URL, then saves to
+     localStorage.  Handles both create and update operations.
+  ════════════════════════════════════════════════════════════════════ */
+  async function saveStudent(id) {
+    var form    = document.getElementById("studentForm");
+    var fd      = new FormData(form);
+    var name    = fd.get("name") || "";
+    var admission = fd.get("admission") || "";
+
+    /* Basic validation */
+    if (!name.trim())      { KHA.toast("Pupil name is required.", "error"); return; }
+    if (!admission.trim()) { KHA.toast("Admission number is required.", "error"); return; }
+
+    /* Read the photo file if one was selected */
+    var photoInput = form.querySelector('input[type="file"]');
+    var photoData  = await KHA.readPhoto(photoInput);
+
+    var students = KHA.load(KHA.STORE.students, []);
+
+    /* Check for duplicate admission number (only for new registrations) */
+    if (!id && students.some(function (s) { return s.admission === admission; })) {
+      KHA.toast("Admission number " + admission + " is already registered.", "error");
+      return;
+    }
+
+    /* Build the record object from all form fields */
+    var rec = {
+      id:                 id || KHA.uid(),
+      name:               fd.get("name")              || "",
+      admission:          fd.get("admission")          || "",
+      gender:             fd.get("gender")             || "",
+      dateOfBirth:        fd.get("dateOfBirth")        || "",
+      nationality:        fd.get("nationality")        || "",
+      religion:           fd.get("religion")           || "",
+      bloodGroup:         fd.get("bloodGroup")         || "",
+      class:              fd.get("class")              || "",
+      stream:             fd.get("stream")             || "",
+      admissionDate:      fd.get("admissionDate")      || KHA.today(),
+      status:             fd.get("status")             || "Active",
+      previousSchool:     fd.get("previousSchool")     || "",
+      guardian:           fd.get("guardian")           || "",
+      guardianPhone:      fd.get("guardianPhone")      || "",
+      guardianEmail:      fd.get("guardianEmail")      || "",
+      guardianOccupation: fd.get("guardianOccupation") || "",
+      address:            fd.get("address")            || "",
+      emergencyContact:   fd.get("emergencyContact")   || "",
+      emergencyPhone:     fd.get("emergencyPhone")     || "",
+      allergies:          fd.get("allergies")          || "",
+      medications:        fd.get("medications")        || "",
+      specialNeeds:       fd.get("specialNeeds")       || "",
+      transferDate:       fd.get("transferDate")       || "",
+      transferReason:     fd.get("transferReason")     || "",
+      /* Keep existing photo if no new one was uploaded */
+      photo:              photoData || (id ? (students.find(function (s) { return s.id === id; }) || {}).photo : null),
+      createdAt:          id ? (students.find(function (s) { return s.id === id; }) || {}).createdAt || KHA.nowISO() : KHA.nowISO(),
+      updatedAt:          KHA.nowISO()
+    };
+
+    if (id) {
+      /* Update existing record */
+      var idx = students.findIndex(function (s) { return s.id === id; });
+      if (idx > -1) students[idx] = rec;
+    } else {
+      /* Add new record */
+      students.push(rec);
+    }
+
+    KHA.save(KHA.STORE.students, students);
+    KHA.closeModal();
+    KHA.toast((id ? "Updated" : "Registered") + " pupil: " + name, "success");
+    renderPage();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     CSV EXPORT
+     Exports all student records as a downloadable CSV file.
+  ════════════════════════════════════════════════════════════════════ */
+  function exportCSV() {
+    var students = KHA.load(KHA.STORE.students, []);
+    var headers  = ["Name","Admission","Gender","Class","Stream","Guardian","Phone","Address","Status","Admitted"];
+    var rows     = students.map(function (s) {
+      return [s.name, s.admission, s.gender, s.class, s.stream,
+              s.guardian, s.guardianPhone || s.phone, s.address,
+              s.status, s.admissionDate]
+        .map(function (v) { return '"' + (v || "").replace(/"/g, '""') + '"'; }).join(",");
+    });
+    var csv  = [headers.join(",")].concat(rows).join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    var a    = document.createElement("a");
+    a.href   = URL.createObjectURL(blob);
+    a.download = "students_" + KHA.SCHOOL_NAME.replace(/\s+/g, "_") + ".csv";
+    a.click();
+    KHA.toast("CSV export downloaded.", "success");
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     DELETE STUDENT
+     Asks for confirmation then removes the record from localStorage.
+  ════════════════════════════════════════════════════════════════════ */
+  function deleteStudent(id) {
+    if (!confirm("Delete this pupil record permanently? This cannot be undone.")) return;
+    var students = KHA.load(KHA.STORE.students, []);
+    KHA.save(KHA.STORE.students, students.filter(function (s) { return s.id !== id; }));
+    KHA.toast("Pupil record deleted.", "default");
+    renderPage();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     EVENT WIRING
+     Called after every renderPage() to attach event listeners to the
+     freshly rendered HTML inside #kha-content.
+     Uses event delegation where practical (one listener on the parent
+     instead of one per button) to keep things efficient.
+  ════════════════════════════════════════════════════════════════════ */
+  function wirePageEvents() {
+    var content = document.getElementById("kha-content");
+
+    /* ── Live search (debounced by the input event) ── */
+    var searchInput = document.getElementById("sSearch");
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        searchQ = this.value;
+        renderPage();
+      });
+    }
+
+    /* ── Class filter dropdown ── */
+    var classSelect = document.getElementById("sClass");
+    if (classSelect) {
+      classSelect.addEventListener("change", function () {
+        filterClass = this.value;
+        renderPage();
+      });
+    }
+
+    /* ── Status filter dropdown ── */
+    var statusSelect = document.getElementById("sStatus");
+    if (statusSelect) {
+      statusSelect.addEventListener("change", function () {
+        filterStatus = this.value;
+        renderPage();
+      });
+    }
+
+    /* ── Click delegation on the content area ── */
+    content.addEventListener("click", function (e) {
+      /* Walk up the DOM to the nearest element with a data-* action attribute */
+      var t = e.target.closest("[data-action],[data-nav-to],[data-view-student],[data-edit-student],[data-del-student]");
+      if (!t) return;
+
+      if (t.dataset.action === "registerStudent") { openStudentModal(null); return; }
+      if (t.dataset.action === "addTransfer")     { openStudentModal(null); return; } // Uses same form with Transfer status
+      if (t.dataset.action === "exportCSV")       { exportCSV(); return; }
+      if (t.dataset.navTo)                         { navigate(t.dataset.navTo); return; }
+      if (t.dataset.viewStudent)                   { openStudentProfile(t.dataset.viewStudent); return; }
+      if (t.dataset.editStudent)                   { openStudentModal(t.dataset.editStudent); return; }
+      if (t.dataset.delStudent)                    { deleteStudent(t.dataset.delStudent); return; }
+    });
+    KHA.wireParentUpdates(content, "registrar", session, renderPage);
+    KHA.wireMessages(content, "registrar", session, renderPage);
+  }
+
+  /* ── Start the portal ── */
+  boot();
+});
+</script>
+</body>
+</html>

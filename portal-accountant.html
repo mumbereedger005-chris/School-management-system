@@ -1,0 +1,717 @@
+<!doctype html>
+<!--
+  portal-accountant.html — Accountant Portal
+  ============================================
+  Handles all financial management for Five Star Model School.
+  Responsibilities:
+    • Create school fees structures (tuition, boarding, transport, meals, etc.)
+    • Generate per-student invoices for each term
+    • Record fee payments and track balances
+    • Issue printable receipts
+    • Manage scholarships, discounts, and bursaries
+    • Financial summary reports with term-by-term breakdown
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Accountant Portal — Five Star Model School</title>
+  <script src="shared.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+
+KHA.init("accountant", function(session) {
+
+  /* ── state ── */
+  var page    = "Dashboard";
+  var hist    = [];
+  var searchQ = "";
+
+  function navigate(p) {
+    if (p===page) return; hist.push(page); page=p; searchQ=""; renderPage();
+  }
+  function goBack() {
+    if (!hist.length) return; page=hist.pop(); renderPage();
+  }
+
+  function boot() {
+    KHA.buildShell({
+      roleKey:"accountant", navGroups:KHA.ROLES.accountant.groups,
+      activePage:page, onNav:navigate, session:session,
+      extraRight:'<a href="index.html" class="btn secondary small no-print">All portals</a>'
+    });
+    document.getElementById("kha-back").addEventListener("click", goBack);
+    renderPage();
+  }
+
+  /* ── dispatcher ── */
+  function renderPage() {
+    KHA.setCrumb(page);
+    document.getElementById("kha-back").disabled = !hist.length;
+    var h="";
+    switch(page){
+      case "Dashboard":        h=pgDashboard();     break;
+      case "Fees structure":   h=pgFeesStructure(); break;
+      case "Invoices":         h=pgInvoices();      break;
+      case "Payments":         h=pgPayments();      break;
+      case "Scholarships":     h=pgScholarships();  break;
+      case "Financial reports":h=pgFinancialReports(); break;
+      case "Payment receipts": h=pgReceipts();      break;
+      case "Parent updates":   h=KHA.renderParentUpdates("accountant", session); break;
+      case "Messages":         h=KHA.renderMessages("accountant", session); break;
+      case "Payment requests": h=pgPaymentRequests(); break;
+      case "Payment settings": h=pgPaymentSettings(); break;
+      default: h=pgDashboard();
+    }
+    KHA.setContent(h);
+    wireEvents();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     DASHBOARD — financial KPIs and recent transactions
+  ══════════════════════════════════════════════════════ */
+  function pgDashboard() {
+    var payments  = KHA.load(KHA.STORE.payments, []);
+    var invoices  = KHA.load(KHA.STORE.invoices, []);
+    var schols    = KHA.load(KHA.STORE.scholarships, []);
+    var fees      = KHA.load(KHA.STORE.fees, []);
+
+    var collected   = payments.reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
+    var invoiced    = invoices.reduce(function(s,i){ return s+(Number(i.amount)||0); }, 0);
+    var discounts   = schols.reduce(function(s,d){ return s+(Number(d.amount)||0); }, 0);
+    var outstanding = Math.max(0, invoiced - collected);
+    var unpaidCount = invoices.filter(function(i){ return i.status==="Unpaid"||i.status==="Overdue"; }).length;
+
+    /* Monthly revenue bars for the last 6 months */
+    var months = [];
+    for (var i=5; i>=0; i--) {
+      var d = new Date(); d.setMonth(d.getMonth()-i);
+      var key = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+      var rev = payments.filter(function(p){ return (p.date||"").startsWith(key); })
+                        .reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
+      months.push({ label:d.toLocaleDateString("en-GB",{month:"short"}), rev:rev });
+    }
+    var maxRev = Math.max.apply(null, months.map(function(m){ return m.rev; }).concat([1]));
+
+    var recentPay = payments.slice().sort(function(a,b){
+      return (b.createdAt||"").localeCompare(a.createdAt||"");
+    }).slice(0,6);
+
+    return KHA.pageHead("Accountant Dashboard",
+      "School financial overview — "+KHA.CURRENT_YEAR,
+      '<button class="btn small" data-action="addPayment">+ Record payment</button>')
+
+    + '<div class="stats">'
+    + KHA.statCard("💵","Fees collected",   KHA.fmtMoney(collected),  payments.length+" payments", true)
+    + KHA.statCard("🧾","Total invoiced",   KHA.fmtMoney(invoiced),   invoices.length+" invoices")
+    + KHA.statCard("⚠️","Outstanding",      KHA.fmtMoney(outstanding),unpaidCount+" unpaid invoices")
+    + KHA.statCard("🏅","Discounts given",  KHA.fmtMoney(discounts),  schols.length+" scholarships")
+    + KHA.statCard("💰","Fee structures",   fees.length,              "Term fee schedules")
+    + '</div>'
+
+    + '<div class="grid2">'
+    /* Revenue bar chart */
+    + '<section class="panel"><div class="panel-head"><h2>Monthly revenue</h2>'
+    + '<small>Payments collected over the last 6 months</small></div>'
+    + '<div class="bars">'
+    + months.map(function(m){
+        return '<div class="barline"><span>'+KHA.esc(m.label)+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+Math.max(4,Math.round((m.rev/maxRev)*100))+'%;background:var(--green)"></div></div>'
+          +'<strong>'+KHA.fmtMoney(m.rev)+'</strong></div>';
+      }).join("")
+    + '</div></section>'
+    /* Recent payments */
+    + '<section class="panel"><div class="panel-head"><h2>Recent payments</h2></div>'
+    + '<div class="activities">'
+    + (recentPay.length ? recentPay.map(function(p){
+        return '<div class="activity"><span class="act-ico">💵</span>'
+          +'<div><p><strong>'+KHA.esc(p.name||"—")+'</strong> · '+KHA.fmtMoney(p.amount)+'</p>'
+          +'<time>'+KHA.esc(p.method||"Cash")+' · '+KHA.fmtDate(p.date)+'</time></div></div>';
+      }).join("")
+      : '<div class="empty"><strong>No payments yet</strong>Record a payment to see it here.</div>')
+    + '</div></section>'
+    + '</div>'
+
+    /* Collection rate KPI */
+    + '<section class="panel" style="margin-bottom:14px">'
+    + '<div class="panel-head"><h2>Fee collection by term</h2></div>'
+    + '<div class="bars">'
+    + ["Term 1","Term 2","Term 3"].map(function(t){
+        var tv = payments.filter(function(p){ return p.term===t; }).reduce(function(s,p){ return s+(Number(p.amount)||0);},0);
+        var ti = invoices.filter(function(i){ return i.term===t; }).reduce(function(s,i){ return s+(Number(i.amount)||0);},0);
+        var pct = Math.max(4, Math.round((tv/Math.max(ti,1))*100));
+        return '<div class="barline"><span>'+KHA.esc(t)+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+(pct>=80?"var(--green)":pct>=50?"var(--amber)":"var(--red)")+'"></div></div>'
+          +'<strong>'+pct+'%</strong></div>';
+      }).join("")
+    + '</div></section>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     FEES STRUCTURE
+     Defines what each class is charged per term.
+     Components: tuition, boarding, transport, meals, uniform,
+     books, examination fees, activities, development fund.
+  ══════════════════════════════════════════════════════ */
+  function pgFeesStructure() {
+    var rows = KHA.load(KHA.STORE.fees, []).filter(function(f){
+      if (!searchQ) return true;
+      return (f.name||"").toLowerCase().includes(searchQ.toLowerCase())
+        || (f.class||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    return KHA.pageHead("Fees structure",
+      "Term fee schedules — "+rows.length+" structure(s)",
+      '<input class="search" id="tSearch" placeholder="Search…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="fees">+ Create fees structure</button>')
+    + '<div class="table-wrap">'
+    + KHA.buildTable([
+        {key:"name",label:"Structure name"},
+        {key:"class",label:"Class"},
+        {key:"term",label:"Term"},
+        {key:"year",label:"Year"},
+        {key:"tuition",label:"Tuition",render:function(r){ return KHA.fmtMoney(r.tuition); }},
+        {key:"boarding",label:"Boarding",render:function(r){ return r.boarding?KHA.fmtMoney(r.boarding):"—"; }},
+        {key:"transport",label:"Transport",render:function(r){ return r.transport?KHA.fmtMoney(r.transport):"—"; }},
+        {key:"total",label:"Total",render:function(r){
+          var t=(Number(r.tuition)||0)+(Number(r.boarding)||0)+(Number(r.transport)||0)
+            +(Number(r.meals)||0)+(Number(r.uniform)||0)+(Number(r.books)||0)
+            +(Number(r.examFee)||0)+(Number(r.activities)||0)+(Number(r.development)||0);
+          return '<strong>'+KHA.fmtMoney(t)+'</strong>';
+        }}
+      ], rows, function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="fees" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="fees" title="Delete">🗑️</button>';
+      })
+    + '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     INVOICES — per-student term fee bills
+  ══════════════════════════════════════════════════════ */
+  function pgInvoices() {
+    var rows = KHA.load(KHA.STORE.invoices, []).filter(function(i){
+      if (!searchQ) return true;
+      var q = searchQ.toLowerCase();
+      return (i.name||"").toLowerCase().includes(q)||(i.admission||"").toLowerCase().includes(q);
+    });
+    return KHA.pageHead("Invoices",
+      rows.length+" invoice(s)",
+      '<input class="search" id="tSearch" placeholder="Search pupil or admission…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="invoices">+ Create invoice</button>')
+    + '<div class="table-wrap">'
+    + KHA.buildTable([
+        {key:"name",label:"Pupil"},
+        {key:"admission",label:"Adm. #"},
+        {key:"class",label:"Class"},
+        {key:"term",label:"Term"},
+        {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
+        {key:"due",label:"Due date",render:function(r){ return KHA.fmtDate(r.due); }},
+        {key:"status",label:"Status",render:sBadge}
+      ], rows, function(r){
+        return '<button class="btn icon" data-view-invoice="'+KHA.esc(r.id)+'" title="View/Print">🖨️</button>'
+          +'<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="invoices" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="invoices" title="Delete">🗑️</button>';
+      })
+    + '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     PAYMENTS — fee payment records with receipt generation
+  ══════════════════════════════════════════════════════ */
+  function pgPayments() {
+    var rows = KHA.load(KHA.STORE.payments, []).filter(function(p){
+      if (!searchQ) return true;
+      var q = searchQ.toLowerCase();
+      return (p.name||"").toLowerCase().includes(q)||(p.receiptNo||"").toLowerCase().includes(q);
+    });
+    var total = rows.reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
+    return KHA.pageHead("Payments",
+      rows.length+" payment(s) · Total: "+KHA.fmtMoney(total),
+      '<input class="search" id="tSearch" placeholder="Search name or receipt…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="payments">+ Record payment</button>')
+    + '<div class="table-wrap">'
+    + KHA.buildTable([
+        {key:"receiptNo",label:"Receipt #"},
+        {key:"name",label:"Pupil"},
+        {key:"admission",label:"Adm. #"},
+        {key:"class",label:"Class"},
+        {key:"term",label:"Term"},
+        {key:"amount",label:"Amount paid",render:function(r){ return '<strong>'+KHA.fmtMoney(r.amount)+'</strong>'; }},
+        {key:"method",label:"Method"},
+        {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
+        {key:"status",label:"Status",render:sBadge}
+      ], rows, function(r){
+        return '<button class="btn icon" data-print-receipt="'+KHA.esc(r.id)+'" title="Print receipt">🖨️</button>'
+          +'<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="payments" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="payments" title="Delete">🗑️</button>';
+      })
+    + '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     SCHOLARSHIPS / DISCOUNTS
+  ══════════════════════════════════════════════════════ */
+  function pgScholarships() {
+    var rows = KHA.load(KHA.STORE.scholarships, []).filter(function(s){
+      if (!searchQ) return true;
+      return (s.name||"").toLowerCase().includes(searchQ.toLowerCase());
+    });
+    var totalDiscount = rows.reduce(function(s,r){ return s+(Number(r.amount)||0); }, 0);
+    return KHA.pageHead("Scholarships & discounts",
+      rows.length+" award(s) · Total: "+KHA.fmtMoney(totalDiscount),
+      '<input class="search" id="tSearch" placeholder="Search…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="scholarships">+ Add scholarship</button>')
+    + '<div class="table-wrap">'
+    + KHA.buildTable([
+        {key:"name",label:"Pupil"},
+        {key:"admission",label:"Adm. #"},
+        {key:"type",label:"Type",render:function(r){ return '<span class="badge blue">'+KHA.esc(r.type||"")+'</span>'; }},
+        {key:"amount",label:"Discount amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
+        {key:"term",label:"Term"},
+        {key:"reason",label:"Reason"}
+      ], rows, function(r){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="scholarships" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="scholarships" title="Delete">🗑️</button>';
+      })
+    + '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     FINANCIAL REPORTS — printable summary
+  ══════════════════════════════════════════════════════ */
+  function pgFinancialReports() {
+    var payments  = KHA.load(KHA.STORE.payments, []);
+    var invoices  = KHA.load(KHA.STORE.invoices, []);
+    var schols    = KHA.load(KHA.STORE.scholarships, []);
+    var collected = payments.reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
+    var invoiced  = invoices.reduce(function(s,i){ return s+(Number(i.amount)||0); }, 0);
+    var discounts = schols.reduce(function(s,d){ return s+(Number(d.amount)||0); }, 0);
+    var outstanding = Math.max(0, invoiced-collected);
+
+    var byMethod = {};
+    payments.forEach(function(p){
+      var m = p.method||"Cash";
+      byMethod[m] = (byMethod[m]||0)+(Number(p.amount)||0);
+    });
+    var maxM = Math.max.apply(null, Object.values(byMethod).concat([1]));
+
+    return KHA.pageHead("Financial reports",
+      "School revenue and collection summary — "+KHA.CURRENT_YEAR,
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print report</button>')
+
+    + '<div class="stats">'
+    + KHA.statCard("💵","Total collected",   KHA.fmtMoney(collected), payments.length+" payments", true)
+    + KHA.statCard("🧾","Total invoiced",    KHA.fmtMoney(invoiced),  invoices.length+" invoices")
+    + KHA.statCard("⚠️","Outstanding",       KHA.fmtMoney(outstanding),"Unpaid balance")
+    + KHA.statCard("🏅","Discounts given",   KHA.fmtMoney(discounts), schols.length+" awards")
+    + '</div>'
+
+    + '<div class="grid2">'
+    /* By term */
+    + '<section class="panel"><div class="panel-head"><h2>Collection by term</h2></div>'
+    + '<div class="bars">'
+    + ["Term 1","Term 2","Term 3"].map(function(t){
+        var tv = payments.filter(function(p){ return p.term===t; }).reduce(function(s,p){ return s+(Number(p.amount)||0);},0);
+        var pct = Math.max(4,Math.round((tv/Math.max(collected,1))*100));
+        return '<div class="barline"><span>'+KHA.esc(t)+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%"></div></div>'
+          +'<strong>'+KHA.fmtMoney(tv)+'</strong></div>';
+      }).join("")
+    + '</div></section>'
+    /* By payment method */
+    + '<section class="panel"><div class="panel-head"><h2>By payment method</h2></div>'
+    + '<div class="bars">'
+    + Object.entries(byMethod).map(function(e){
+        var pct = Math.max(4,Math.round((e[1]/maxM)*100));
+        return '<div class="barline"><span>'+KHA.esc(e[0])+'</span>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:var(--green)"></div></div>'
+          +'<strong>'+KHA.fmtMoney(e[1])+'</strong></div>';
+      }).join("") || '<div style="padding:16px;font-size:10px;color:var(--muted)">No payment data yet.</div>'
+    + '</div></section>'
+    + '</div>'
+
+    /* Full payments list */
+    + '<div class="table-wrap"><div class="table-toolbar"><h2>All payment records</h2></div>'
+    + KHA.buildTable([
+        {key:"receiptNo",label:"Receipt #"},
+        {key:"name",label:"Pupil"},
+        {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
+        {key:"method",label:"Method"},
+        {key:"term",label:"Term"},
+        {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
+        {key:"status",label:"Status",render:sBadge}
+      ], payments.slice().reverse(), null)
+    + '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     PAYMENT RECEIPTS — print receipts from existing payments
+  ══════════════════════════════════════════════════════ */
+  function pgReceipts() {
+    var payments = KHA.load(KHA.STORE.payments, []).slice().reverse();
+    return KHA.pageHead("Payment receipts",
+      "Select a payment to print its receipt.",
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print current receipt</button>')
+    + '<div class="notice info">Click the 🖨️ icon on any payment to preview and print its receipt.</div>'
+    + '<div class="table-wrap">'
+    + KHA.buildTable([
+        {key:"receiptNo",label:"Receipt #"},
+        {key:"name",label:"Pupil"},
+        {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
+        {key:"method",label:"Method"},
+        {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
+        {key:"status",label:"Status",render:sBadge}
+      ], payments, function(r){
+        return '<button class="btn icon" data-print-receipt="'+KHA.esc(r.id)+'" title="Print receipt">🖨️</button>';
+      })
+    + '</div>'
+    + '<div id="receiptPreview"></div>';
+  }
+
+  /* ── Build a printable receipt ── */
+  function buildReceipt(payment) {
+    return '<div class="receipt" id="printReceipt" style="max-width:440px;margin:20px auto">'
+      +'<div class="receipt-header">'
+      +'<div style="width:50px;height:58px;margin:0 auto 8px">'+KHA.BADGE_SVG+'</div>'
+      +'<h3 style="margin:4px 0">'+KHA.esc(KHA.SCHOOL_NAME)+'</h3>'
+      +'<p style="margin:2px 0;font-size:11px">Kasese, Western Uganda</p>'
+      +'<p style="font-size:13px;font-weight:700;margin-top:6px;color:#1a3d6b">OFFICIAL PAYMENT RECEIPT</p>'
+      +'</div>'
+      +'<div class="receipt-row"><span>Receipt No.</span><strong>'+KHA.esc(payment.receiptNo||"—")+'</strong></div>'
+      +'<div class="receipt-row"><span>Date</span><span>'+KHA.fmtDate(payment.date)+'</span></div>'
+      +'<div class="receipt-row"><span>Received from</span><span>'+KHA.esc(payment.name||"—")+'</span></div>'
+      +'<div class="receipt-row"><span>Admission no.</span><span>'+KHA.esc(payment.admission||"—")+'</span></div>'
+      +'<div class="receipt-row"><span>Class</span><span>'+KHA.esc(payment.class||"—")+'</span></div>'
+      +'<div class="receipt-row"><span>Term</span><span>'+KHA.esc(payment.term||"—")+'</span></div>'
+      +'<div class="receipt-row"><span>Payment method</span><span>'+KHA.esc(payment.method||"Cash")+'</span></div>'
+      +'<div class="receipt-total"><span>Amount paid</span><span>'+KHA.fmtMoney(payment.amount)+'</span></div>'
+      +'<div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:10px;text-align:center">'
+      +'<div style="border-top:1px solid #333;padding-top:4px">Received by</div>'
+      +'<div style="border-top:1px solid #333;padding-top:4px">Accountant / Cashier</div>'
+      +'</div>'
+      +'<p style="text-align:center;font-size:9px;margin-top:14px;color:#aaa">'+KHA.esc(KHA.SCHOOL_MOTTO)+' · '+new Date().toLocaleDateString()+'</p>'
+      +'</div>'
+      +'<div class="no-print" style="margin-top:12px;display:flex;gap:8px">'
+      +'<button class="btn secondary" onclick="window.print()">🖨️ Print receipt</button>'
+      +'</div>';
+  }
+
+  function pgPaymentRequests() {
+    var requests = KHA.load(KHA.STORE.paymentRequests, []).slice().sort(function(a,b) {
+      return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+    });
+    var pending = requests.filter(function(request){ return request.status==="Pending"; }).length;
+    return KHA.pageHead("Parent payment requests", pending+" request(s) awaiting manual verification.")
+      + '<div class="notice warn">Confirm a payment only after checking the school’s official MTN, Airtel, or bank statement. A parent-entered transaction reference is not proof of receipt.</div>'
+      + '<div class="table-wrap">'+KHA.buildTable([
+        {key:"createdAt",label:"Submitted",render:function(r){ return KHA.fmtDate(r.createdAt); }},
+        {key:"studentName",label:"Student"},
+        {key:"admission",label:"Admission"},
+        {key:"method",label:"Method"},
+        {key:"payerPhone",label:"Payer phone"},
+        {key:"transactionReference",label:"Transaction reference"},
+        {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
+        {key:"status",label:"Status",render:sBadge},
+        {key:"decisionNote",label:"Accountant note"}
+      ],requests,function(request){
+        if(request.status!=="Pending") return "—";
+        return '<button class="btn success small" data-confirm-payment="'+KHA.esc(request.id)+'">Confirm received</button>'
+          +'<button class="btn danger small" data-reject-payment="'+KHA.esc(request.id)+'">Reject</button>';
+      })+'</div>';
+  }
+
+  function pgPaymentSettings() {
+    var settings = KHA.load(KHA.STORE.paymentSettings,{});
+    return KHA.pageHead("Parent payment instructions","Set the official mobile-money and bank details shown in parent accounts.")
+      + '<div class="notice warn">Enter public payment instructions only. Never save a mobile-money PIN, bank password, API key, or secret code here. This browser app cannot start or verify an external transfer.</div>'
+      + '<section class="panel"><div class="panel-body"><form id="payment-settings-form" class="form-grid">'
+      + '<div class="section-title">MTN Mobile Money</div>'
+      + accField("mtnNumber","School MTN number",settings.mtnNumber,"tel")
+      + accField("mtnMerchantCode","School merchant / business code",settings.mtnMerchantCode)
+      + '<div class="section-title">Airtel Money</div>'
+      + accField("airtelNumber","School Airtel number",settings.airtelNumber,"tel")
+      + accField("airtelMerchantCode","School merchant / business code",settings.airtelMerchantCode)
+      + '<div class="section-title">Bank transfer</div>'
+      + accField("bankName","Bank name",settings.bankName)
+      + accField("bankAccountName","Account name",settings.bankAccountName)
+      + accField("bankAccountNumber","Account number",settings.bankAccountNumber)
+      + accField("bankBranch","Branch",settings.bankBranch)
+      + '<div class="field full"><button class="btn" type="submit">Save payment instructions</button></div>'
+      + '</form></div></section>';
+  }
+
+  function accField(name,label,value,type) {
+    return '<div class="field"><label>'+KHA.esc(label)+'</label><input name="'+KHA.esc(name)+'" type="'+KHA.esc(type||"text")+'" value="'+KHA.esc(value||"")+'"></div>';
+  }
+
+  function decidePaymentRequest(id, approved) {
+    var requests = KHA.load(KHA.STORE.paymentRequests,[]);
+    var request = requests.find(function(item){ return item.id===id; });
+    if(!request || request.status!=="Pending") {
+      KHA.toast("This request has already been reviewed or no longer exists.","error");
+      return;
+    }
+    if(approved) {
+      if(!confirm("Have you independently confirmed this exact payment in the official school account statement? Only confirm after the money has been received.")) return;
+      var payments = KHA.load(KHA.STORE.payments,[]);
+      var existingPayment = payments.find(function(payment){ return payment.paymentRequestId===request.id; });
+      var reference=String(request.transactionReference||"").trim().toLowerCase();
+      var referenceAlreadyUsed=requests.some(function(item){
+        return item.id!==request.id&&item.status==="Confirmed"
+          &&String(item.transactionReference||"").trim().toLowerCase()===reference;
+      })||payments.some(function(payment){
+        return payment.paymentRequestId!==request.id
+          &&String(payment.transactionReference||"").trim().toLowerCase()===reference;
+      });
+      if(referenceAlreadyUsed){
+        KHA.toast("This transaction reference is already recorded against another payment. Review the official statement before taking action.","error");
+        return;
+      }
+      var receiptNo = existingPayment ? existingPayment.receiptNo : "KHA-"+Date.now().toString(36).toUpperCase();
+      if(!existingPayment) {
+        var payment = {
+          id:KHA.uid(), paymentRequestId:request.id, receiptNo:receiptNo,
+          name:request.studentName, admission:request.admission, class:request.class,
+          term:request.term, amount:Number(request.amount)||0,
+          method:request.method, date:request.paidOn||KHA.today(),
+          receivedBy:session.name, status:"Complete",
+          transactionReference:request.transactionReference, verifiedAt:KHA.nowISO()
+        };
+        if(!KHA.save(KHA.STORE.payments,payments.concat([payment]))) return;
+      }
+      request.status="Confirmed";
+      request.decisionNote="Payment received and verified by "+session.name;
+      request.reviewedAt=KHA.nowISO();
+      request.receiptNo=receiptNo;
+    } else {
+      var note=prompt("Reason for rejecting this payment request (optional):","");
+      if(note===null) return;
+      request.status="Rejected";
+      request.decisionNote=String(note).trim()||"Payment not verified";
+      request.reviewedAt=KHA.nowISO();
+    }
+    if(!KHA.save(KHA.STORE.paymentRequests,requests)) return;
+    KHA.toast(approved?"Payment verified. Receipt "+request.receiptNo+" created.":"Payment request rejected.","success");
+    renderPage();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     STATUS BADGE
+  ══════════════════════════════════════════════════════ */
+  function sBadge(r) {
+    var v=r.status||""; var c="gray";
+    if (["Paid","Complete","Confirmed"].includes(v)) c="green";
+    else if (["Part-paid","Partial"].includes(v)) c="amber";
+    else if (["Unpaid","Overdue","Refunded","Rejected"].includes(v)) c="red";
+    else if (["Pending"].includes(v)) c="blue";
+    return '<span class="badge '+c+'">'+KHA.esc(v)+'</span>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     FORM DEFINITIONS
+  ══════════════════════════════════════════════════════ */
+  function formForStore(storeKey, rec) {
+    rec = rec||{};
+    switch(storeKey){
+      case "fees":
+        return '<div class="form-grid">'
+          +fi("name","Structure name","text",rec.name,1)
+          +fi("class","Class / category","select",rec.class,1,["All classes"].concat(KHA.CLASS_LIST))
+          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3","Annual"])
+          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR,1)
+          +'<div class="section-title">Fee components (UGX)</div>'
+          +fi("tuition","Tuition fees","number",rec.tuition,1)
+          +fi("boarding","Boarding fees","number",rec.boarding)
+          +fi("transport","Transport fees","number",rec.transport)
+          +fi("meals","Meals (day scholars)","number",rec.meals)
+          +fi("uniform","Uniform","number",rec.uniform)
+          +fi("books","Books & materials","number",rec.books)
+          +fi("examFee","Examination fee","number",rec.examFee)
+          +fi("activities","Activities & sports","number",rec.activities)
+          +fi("development","Development fund","number",rec.development)
+          +fi("due","Due date","date",rec.due)
+          +'</div>';
+      case "invoices":
+        return '<div class="form-grid">'
+          +fi("name","Pupil full name","text",rec.name,1)
+          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
+          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
+          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR)
+          +fi("amount","Total amount (UGX)","number",rec.amount,1)
+          +fi("due","Due date","date",rec.due,1)
+          +fi("status","Status","select",rec.status||"Unpaid",1,["Unpaid","Part-paid","Paid","Overdue"])
+          +'</div>';
+      case "payments":
+        return '<div class="form-grid">'
+          +fi("receiptNo","Receipt number","text",rec.receiptNo||("REC-"+Date.now()),1)
+          +fi("name","Pupil full name","text",rec.name,1)
+          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
+          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
+          +fi("amount","Amount paid (UGX)","number",rec.amount,1)
+          +fi("method","Payment method","select",rec.method||"Cash",1,["Cash","Mobile Money","Bank transfer","Cheque","Card"])
+          +fi("date","Payment date","date",rec.date||KHA.today(),1)
+          +fi("receivedBy","Received by","text",rec.receivedBy||session.name)
+          +fi("balance","Balance remaining (UGX)","number",rec.balance)
+          +fi("status","Status","select",rec.status||"Complete",1,["Complete","Partial","Refunded"])
+          +'</div>';
+      case "scholarships":
+        return '<div class="form-grid">'
+          +fi("name","Pupil full name","text",rec.name,1)
+          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("type","Award type","select",rec.type,1,["Scholarship","Discount","Bursary","Staff benefit","Government sponsorship"])
+          +fi("amount","Discount / award amount (UGX)","number",rec.amount,1)
+          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3","Annual"])
+          +fi("reason","Reason / notes","textarea",rec.reason,0,[],"full")
+          +'</div>';
+      default: return '<p>No form for this record type.</p>';
+    }
+  }
+
+  function fi(name,label,type,value,req,options,extra){
+    var cls="field"+(extra?" "+extra:"");
+    var r=req?" required":""; var inp;
+    if(type==="select"){
+      inp='<select name="'+KHA.esc(name)+'"'+r+'>'
+        +(options||[]).map(function(o){
+            return '<option value="'+KHA.esc(o)+'"'+(value===o?" selected":"")+'>'+KHA.esc(o)+'</option>';
+          }).join("")+'</select>';
+    }else if(type==="textarea"){
+      inp='<textarea name="'+KHA.esc(name)+'"'+r+'>'+KHA.esc(value||"")+'</textarea>';
+    }else{
+      inp='<input name="'+KHA.esc(name)+'" type="'+KHA.esc(type)+'" value="'+KHA.esc(value||"")+'"'+r+'>';
+    }
+    return '<div class="'+cls+'"><label>'+KHA.esc(label)+'</label>'+inp+'</div>';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     MODAL OPENERS
+  ══════════════════════════════════════════════════════ */
+  function openRecordModal(storeKey, id) {
+    var storeId = KHA.STORE[storeKey]||storeKey;
+    var records = KHA.load(storeId,[]);
+    var rec     = id ? records.find(function(r){ return r.id===id; }) : null;
+    var labels  = {fees:"fees structure",invoices:"invoice",payments:"payment",scholarships:"scholarship"};
+    KHA.openModal(
+      '<div class="modal-head"><h2>'+(rec?"Edit":"Create new")+" "+KHA.esc(labels[storeKey]||storeKey)+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body"><form id="mForm">'+formForStore(storeKey,rec)+'</form></div>'
+      +'<div class="modal-foot">'
+      +'<button class="btn secondary" onclick="KHA.closeModal()">Cancel</button>'
+      +'<button class="btn success" id="mSave">💾 Save</button></div>', true);
+    document.getElementById("mSave").addEventListener("click",function(){ saveRecord(storeKey,rec?rec.id:null); });
+  }
+
+  function openReceiptModal(id) {
+    var p = KHA.load(KHA.STORE.payments,[]).find(function(x){ return x.id===id; });
+    if (!p) return;
+    KHA.openModal(
+      '<div class="modal-head"><h2>Payment receipt — '+KHA.esc(p.receiptNo||"")+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body">'+buildReceipt(p)+'</div>'
+      +'<div class="modal-foot"><button class="btn secondary" onclick="KHA.closeModal()">Close</button></div>');
+  }
+
+  function openInvoiceModal(id) {
+    var inv = KHA.load(KHA.STORE.invoices,[]).find(function(x){ return x.id===id; });
+    if (!inv) return;
+    var fees = KHA.load(KHA.STORE.fees,[]).find(function(f){ return f.class===inv.class && f.term===inv.term; })||{};
+    var paid = KHA.load(KHA.STORE.payments,[])
+      .filter(function(p){ return p.admission===inv.admission && p.term===inv.term; })
+      .reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
+    var balance = Math.max(0, (Number(inv.amount)||0)-paid);
+
+    KHA.openModal(
+      '<div class="modal-head"><h2>Invoice — '+KHA.esc(inv.name||"")+'</h2>'
+      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
+      +'<div class="modal-body">'
+      +'<div class="receipt" style="max-width:100%">'
+      +'<div class="receipt-header">'
+      +'<div style="width:48px;height:55px;margin:0 auto 8px">'+KHA.BADGE_SVG+'</div>'
+      +'<h3 style="margin:4px 0">'+KHA.esc(KHA.SCHOOL_NAME)+'</h3>'
+      +'<p style="font-size:13px;font-weight:700;margin-top:6px;color:#1a3d6b">FEE INVOICE</p>'
+      +'</div>'
+      +'<div class="receipt-row"><span>Pupil</span><strong>'+KHA.esc(inv.name)+'</strong></div>'
+      +'<div class="receipt-row"><span>Admission</span><span>'+KHA.esc(inv.admission)+'</span></div>'
+      +'<div class="receipt-row"><span>Class</span><span>'+KHA.esc(inv.class)+'</span></div>'
+      +'<div class="receipt-row"><span>Term</span><span>'+KHA.esc(inv.term)+'</span></div>'
+      +'<div class="receipt-row"><span>Due date</span><span>'+KHA.fmtDate(inv.due)+'</span></div>'
+      +'<div class="receipt-row"><span>Total billed</span><strong>'+KHA.fmtMoney(inv.amount)+'</strong></div>'
+      +'<div class="receipt-row"><span>Amount paid</span><span>'+KHA.fmtMoney(paid)+'</span></div>'
+      +'<div class="receipt-total"><span>Balance due</span><span style="color:var(--red)">'+KHA.fmtMoney(balance)+'</span></div>'
+      +'</div>'
+      +'<div class="no-print" style="margin-top:12px"><button class="btn secondary" onclick="window.print()">🖨️ Print invoice</button></div>'
+      +'</div>'
+      +'<div class="modal-foot"><button class="btn secondary" onclick="KHA.closeModal()">Close</button></div>');
+  }
+
+  /* ── Save generic record ── */
+  function saveRecord(storeKey, id) {
+    var form  = document.getElementById("mForm");
+    var fd    = new FormData(form);
+    var storeId = KHA.STORE[storeKey]||storeKey;
+    var records = KHA.load(storeId,[]);
+    var rec   = {}; fd.forEach(function(v,k){ rec[k]=v; });
+    if (!id) { rec.id=KHA.uid(); rec.createdAt=KHA.nowISO(); records.push(rec); }
+    else {
+      rec.id=id;
+      rec.createdAt=(records.find(function(r){return r.id===id;})||{}).createdAt||KHA.nowISO();
+      var idx=records.findIndex(function(r){return r.id===id;});
+      if(idx>-1) records[idx]=rec;
+    }
+    KHA.save(storeId, records);
+    KHA.closeModal();
+    KHA.toast((id?"Updated":"Saved")+" record.", "success");
+    renderPage();
+  }
+
+  function deleteRecord(storeKey, id) {
+    if (!confirm("Delete this record permanently?")) return;
+    var storeId = KHA.STORE[storeKey]||storeKey;
+    KHA.save(storeId, KHA.load(storeId,[]).filter(function(r){ return r.id!==id; }));
+    KHA.toast("Record deleted.", "default");
+    renderPage();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     EVENT WIRING
+  ══════════════════════════════════════════════════════ */
+  function wireEvents(){
+    var content = document.getElementById("kha-content");
+    var ts = document.getElementById("tSearch");
+    if(ts) ts.addEventListener("input",function(){ searchQ=this.value; renderPage(); });
+
+    content.addEventListener("click",function(e){
+      var t=e.target.closest("[data-action],[data-nav-to],[data-edit-record],[data-del-record],[data-print-receipt],[data-view-invoice],[data-confirm-payment],[data-reject-payment]");
+      if(!t) return;
+      if(t.dataset.navTo)                            { navigate(t.dataset.navTo); return; }
+      if(t.dataset.action==="addPayment")            { openRecordModal("payments",null); return; }
+      if(t.dataset.action==="addRecord")             { openRecordModal(t.dataset.store,null); return; }
+      if(t.dataset.editRecord)                       { openRecordModal(t.dataset.store,t.dataset.editRecord); return; }
+      if(t.dataset.delRecord)                        { deleteRecord(t.dataset.store,t.dataset.delRecord); return; }
+      if(t.dataset.printReceipt)                     { openReceiptModal(t.dataset.printReceipt); return; }
+      if(t.dataset.viewInvoice)                      { openInvoiceModal(t.dataset.viewInvoice); return; }
+      if(t.dataset.confirmPayment)                    { decidePaymentRequest(t.dataset.confirmPayment,true); return; }
+      if(t.dataset.rejectPayment)                     { decidePaymentRequest(t.dataset.rejectPayment,false); return; }
+    });
+    content.addEventListener("submit",function(e){
+      if(e.target.id==="payment-settings-form"){
+        e.preventDefault();
+        var data=new FormData(e.target), settings={};
+        ["mtnNumber","mtnMerchantCode","airtelNumber","airtelMerchantCode","bankName","bankAccountName","bankAccountNumber","bankBranch"].forEach(function(key){settings[key]=String(data.get(key)||"").trim();});
+        if(KHA.save(KHA.STORE.paymentSettings,settings)){KHA.toast("Parent payment instructions saved.","success");renderPage();}
+      }
+    });
+    KHA.wireParentUpdates(content, "accountant", session, renderPage);
+    KHA.wireMessages(content, "accountant", session, renderPage);
+  }
+
+  boot();
+});
+</script>
+</body>
+</html>

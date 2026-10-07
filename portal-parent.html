@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parent Portal — Five Star Model School</title>
+  <script src="shared.js"></script>
+  <style>
+    @media print {
+      body.parent-printing #root,
+      body.parent-printing #root * { visibility: hidden !important; }
+      body.parent-printing #parent-print-area,
+      body.parent-printing #parent-print-area * { visibility: visible !important; }
+      body.parent-printing #parent-print-area {
+        position: fixed; inset: 0; width: 100%; padding: 20px;
+        background: #fff; color: #111; box-sizing: border-box;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<div id="parent-print-area" aria-hidden="true"></div>
+<script>
+"use strict";
+
+KHA.init("parent", function(session) {
+  var page = "Dashboard";
+  var history = [];
+  var selectedStudentId = "";
+
+  function parentLinks() {
+    return KHA.load(KHA.STORE.parentLinks, []).filter(function(link) {
+      return link.accountId === session.id;
+    });
+  }
+
+  function linkedStudents() {
+    var students = KHA.load(KHA.STORE.students, []);
+    return parentLinks().map(function(link) {
+      return students.find(function(student) { return student.id === link.studentId; });
+    }).filter(Boolean);
+  }
+
+  function currentStudent() {
+    var students = linkedStudents();
+    return students.find(function(student) { return student.id === selectedStudentId; }) || students[0] || null;
+  }
+
+  function navigate(nextPage) {
+    if (nextPage === page) return;
+    history.push(page);
+    page = nextPage;
+    renderPage();
+  }
+
+  function boot() {
+    KHA.buildShell({
+      roleKey: "parent",
+      navGroups: KHA.ROLES.parent.groups,
+      activePage: page,
+      onNav: navigate,
+      session: session,
+      extraRight: '<a href="index.html" class="btn secondary small no-print">All portals</a>'
+    });
+    document.getElementById("kha-back").addEventListener("click", function() {
+      if (!history.length) return;
+      page = history.pop();
+      renderPage();
+    });
+    window.addEventListener("afterprint", function() {
+      document.body.classList.remove("parent-printing");
+      document.getElementById("parent-print-area").innerHTML = "";
+    });
+    renderPage();
+  }
+
+  function renderPage() {
+    KHA.setCrumb(page);
+    document.getElementById("kha-back").disabled = !history.length;
+    var html;
+    switch (page) {
+      case "My children": html = pageChildren(); break;
+      case "Fees & payments": html = pageFees(); break;
+      case "School calendar": html = pageCalendar(); break;
+      case "Announcements": html = pageAnnouncements(); break;
+      case "Department updates": html = pageDepartmentUpdates(); break;
+      case "Messages": html = KHA.renderMessages("parent", session); break;
+      case "Parent profile": html = pageProfile(); break;
+      default: html = pageDashboard();
+    }
+    KHA.setContent(html);
+    wireEvents();
+  }
+
+  function pageDashboard() {
+    var student = currentStudent();
+    var announcements = KHA.load(KHA.STORE.announcements, []).slice().reverse().slice(0, 4);
+    var upcoming = getEvents().filter(function(event) { return !event.date || event.date >= KHA.today(); }).slice(0, 4);
+    var notices = notifications(student);
+    var html = KHA.pageHead("Parent dashboard", "Your child's school information and updates.");
+
+    if (!student) {
+      html += '<div class="notice info">Link your child to see their profile, fees, and school information. You will need the admission number and guardian phone registered with the school.</div>'
+        + linkChildForm();
+    } else {
+      var feeData = studentFees(student);
+      html += '<div class="stats">'
+        + KHA.statCard("🎓", "Child", student.name, (student.class || "Class not set") + (student.stream ? " · " + student.stream : ""), true)
+        + KHA.statCard("🧾", "Outstanding fees", KHA.fmtMoney(feeData.balance), "Across recorded invoices")
+        + KHA.statCard("💵", "Fees paid", KHA.fmtMoney(feeData.paid), "Recorded payments")
+        + KHA.statCard("📢", "Notifications", notices.length, "Items needing attention")
+        + '</div>'
+        + '<div class="grid2">'
+        + '<section class="panel"><div class="panel-head"><h2>My child</h2><button class="btn secondary small" data-nav-page="My children">View profile</button></div>'
+        + '<div class="panel-body"><strong>'+KHA.esc(student.name)+'</strong><p style="margin:6px 0;color:var(--muted)">Admission: '+KHA.esc(student.admission||"—")+' · '+KHA.esc(student.class||"—")+(student.stream?" · "+KHA.esc(student.stream):"")+'</p></div></section>'
+        + '<section class="panel"><div class="panel-head"><h2>Quick notifications</h2></div><div class="activities">'
+        + (notices.length ? notices.map(function(item) {
+            return '<div class="activity"><span class="act-ico">'+item.icon+'</span><div><p><strong>'+KHA.esc(item.title)+'</strong></p><time>'+KHA.esc(item.detail)+'</time></div></div>';
+          }).join("") : '<div class="empty"><strong>You are all caught up</strong>New school updates will appear here.</div>')
+        + '</div></section>'
+        + '</div>';
+    }
+
+    html += '<div class="grid2">'
+      + '<section class="panel"><div class="panel-head"><h2>School announcements</h2><button class="btn secondary small" data-nav-page="Announcements">All announcements</button></div><div class="activities">'
+      + (announcements.length ? announcements.map(announcementItem).join("") : '<div class="empty"><strong>No announcements</strong>School news and reminders will appear here.</div>')
+      + '</div></section>'
+      + '<section class="panel"><div class="panel-head"><h2>Upcoming events</h2><button class="btn secondary small" data-nav-page="School calendar">School calendar</button></div><div class="activities">'
+      + (upcoming.length ? upcoming.map(eventItem).join("") : '<div class="empty"><strong>No upcoming events</strong>School dates will appear here when published.</div>')
+      + '</div></section>'
+      + '<section class="panel"><div class="panel-head"><h2>Department updates</h2><button class="btn secondary small" data-nav-page="Department updates">View all updates</button></div><div class="activities">'
+      + (parentUpdates().slice(0, 4).length ? parentUpdates().slice(0, 4).map(parentUpdateItem).join("") : '<div class="empty"><strong>No department updates</strong>Updates shared by school departments will appear here.</div>')
+      + '</div></section>'
+      + '</div>';
+    return html;
+  }
+
+  function pageChildren() {
+    var students = linkedStudents();
+    var html = KHA.pageHead("My children", "Student details and family links.", "");
+    if (!students.length) return html + '<div class="notice info">No child is linked to this account yet. Verify your details below to connect to a student record.</div>' + linkChildForm();
+
+    html += '<div class="cards">';
+    students.forEach(function(student) {
+      html += '<button type="button" class="module-card" data-select-child="'+KHA.esc(student.id)+'" style="text-align:left;border:2px solid '+(currentStudent() && currentStudent().id===student.id?"var(--blue)":"var(--line)")+';cursor:pointer">'
+        + '<div class="mc-icon">🎓</div><h3>'+KHA.esc(student.name)+'</h3><p>'+KHA.esc(student.class||"Class not set")+(student.stream?" · "+KHA.esc(student.stream):"")+'<br>Admission: '+KHA.esc(student.admission||"—")+'</p></button>';
+    });
+    html += '</div>';
+
+    var student = currentStudent();
+    if (student) html += childProfile(student);
+    html += '<section class="panel" style="margin-top:14px"><div class="panel-head"><h2>Link another child</h2></div><div class="panel-body">'+linkChildForm()+'</div></section>';
+    return html;
+  }
+
+  function childProfile(student) {
+    var subjects = KHA.load(KHA.STORE.subjects, []).filter(function(subject) {
+      return (subject.classes || "").split(/[,;]+/).some(function(className) {
+        return className.trim() === student.class;
+      });
+    });
+    var details = [
+      ["Admission / registration number", student.admission],
+      ["Class and stream", (student.class||"—") + (student.stream ? " · " + student.stream : "")],
+      ["Date of birth", KHA.fmtDate(student.dateOfBirth)],
+      ["Parent / guardian", student.guardian],
+      ["Guardian phone", student.guardianPhone],
+      ["Guardian email", student.guardianEmail],
+      ["Home address", student.address],
+      ["Emergency contact", (student.emergencyContact||"—") + (student.emergencyPhone ? " · " + student.emergencyPhone : "")],
+      ["Blood group", student.bloodGroup],
+      ["Allergies", student.allergies],
+      ["Medications", student.medications],
+      ["Medical / learning needs", student.specialNeeds]
+    ];
+    return '<section class="panel" style="margin-top:14px"><div class="panel-head"><h2>Student profile — '+KHA.esc(student.name)+'</h2></div><div class="panel-body">'
+      + '<div class="grid2"><div><h3 style="margin-top:0">Student and guardian information</h3><table style="width:100%;font-size:11px;border-collapse:collapse"><tbody>'
+      + details.map(function(row) { return '<tr><th style="text-align:left;padding:7px 10px 7px 0;color:var(--muted);width:42%">'+KHA.esc(row[0])+'</th><td style="padding:7px 0">'+KHA.esc(row[1]||"—")+'</td></tr>'; }).join("")
+      + '</tbody></table></div><div><h3 style="margin-top:0">Subjects being studied</h3>'
+      + (subjects.length ? '<ul>'+subjects.map(function(subject) { return '<li>'+KHA.esc(subject.name||subject.code||"Subject")+'</li>'; }).join("")+'</ul>' : '<p style="color:var(--muted)">No subject assignments are recorded for this class yet.</p>')
+      + '</div></div></div></section>';
+  }
+
+  function pageFees() {
+    var student = currentStudent();
+    var html = KHA.pageHead("Fees & payments", "Fee balance, payment history, due dates, and printable records.");
+    if (!student) return html + '<div class="notice info">Link a child to view their fee information.</div>' + linkChildForm();
+    var data = studentFees(student);
+    var paymentSettings = KHA.load(KHA.STORE.paymentSettings,{});
+    var requests = KHA.load(KHA.STORE.paymentRequests,[]).filter(function(request) {
+      return request.parentAccountId===session.id && request.studentId===student.id;
+    }).sort(function(a,b) { return String(b.createdAt||"").localeCompare(String(a.createdAt||"")); });
+    html += '<div class="stats">'
+      + KHA.statCard("🧾", "Total school fees", KHA.fmtMoney(data.total), "Recorded invoices", true)
+      + KHA.statCard("💵", "Amount paid", KHA.fmtMoney(data.paid), data.payments.length+" payment(s)")
+      + KHA.statCard("⚠️", "Balance", KHA.fmtMoney(data.balance), "Outstanding on invoices")
+      + KHA.statCard("📅", "Due invoices", data.invoices.filter(function(invoice) { return invoiceBalance(invoice, data.payments) > 0; }).length, "Unpaid or part-paid")
+      + '</div>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>School payment instructions</h2></div><div class="panel-body">'
+      + paymentInstruction("MTN Mobile Money",paymentSettings.mtnNumber,paymentSettings.mtnMerchantCode)
+      + paymentInstruction("Airtel Money",paymentSettings.airtelNumber,paymentSettings.airtelMerchantCode)
+      + (paymentSettings.bankName||paymentSettings.bankAccountName||paymentSettings.bankAccountNumber
+        ? '<p><strong>Bank transfer:</strong> '+KHA.esc(paymentSettings.bankName||"")+' · '+KHA.esc(paymentSettings.bankAccountName||"")+' · Account '+KHA.esc(paymentSettings.bankAccountNumber||"")+(paymentSettings.bankBranch?" · "+KHA.esc(paymentSettings.bankBranch):"")+'</p>' : "")
+      + (!paymentSettings.mtnNumber&&!paymentSettings.mtnMerchantCode&&!paymentSettings.airtelNumber&&!paymentSettings.airtelMerchantCode&&!paymentSettings.bankAccountNumber
+        ? '<p style="color:var(--muted)">Official payment details have not been added yet. Contact the school accountant to confirm the correct details.</p>' : "")
+      + '<div class="notice warn">Pay using your mobile-money app or bank, then submit the transaction reference below. Never enter your mobile-money PIN or banking password here. Submission is not confirmation: the Accountant must verify the funds before a receipt is issued.</div>'
+      + '</div></section>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Report a payment</h2><small>For Accountant verification</small></div><div class="panel-body"><form id="payment-request-form" class="form-grid">'
+      + '<div class="field"><label>Payment method</label><select name="method" required><option value="MTN Mobile Money">MTN Mobile Money</option><option value="Airtel Money">Airtel Money</option><option value="Bank transfer">Bank transfer</option></select></div>'
+      + '<div class="field"><label>Amount paid (UGX)</label><input name="amount" type="number" min="1" step="1" required></div>'
+      + '<div class="field"><label>Transaction reference / bank narration</label><input name="transactionReference" maxlength="100" required></div>'
+      + '<div class="field"><label>Payer phone number</label><input name="payerPhone" type="tel" value="'+KHA.esc(student.guardianPhone||"")+'" required></div>'
+      + '<div class="field"><label>Term</label><select name="term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+      + '<div class="field"><label>Date paid</label><input name="paidOn" type="date" value="'+KHA.today()+'" required></div>'
+      + '<div class="field full"><button class="btn" type="submit">Submit payment for verification</button></div>'
+      + '</form></div></section>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Payment verification requests</h2></div><div class="table-wrap">'
+      + KHA.buildTable([
+          {key:"createdAt",label:"Submitted",render:function(request){return KHA.fmtDate(request.createdAt);}},
+          {key:"method",label:"Method"},
+          {key:"transactionReference",label:"Reference"},
+          {key:"amount",label:"Amount",render:function(request){return KHA.fmtMoney(request.amount);}},
+          {key:"status",label:"Status",render:function(request){return paymentRequestBadge(request.status);}},
+          {key:"decisionNote",label:"Accountant response"},
+          {key:"receiptNo",label:"Receipt"}
+        ],requests,null)
+      + '</div></section>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Invoices and due dates</h2></div><div class="table-wrap">'
+      + KHA.buildTable([
+          {key:"term",label:"Term"},
+          {key:"year",label:"Year"},
+          {key:"amount",label:"Total fees",render:function(invoice) { return KHA.fmtMoney(invoice.amount); }},
+          {key:"due",label:"Due date",render:function(invoice) { return KHA.fmtDate(invoice.due); }},
+          {key:"balance",label:"Balance",render:function(invoice) { return KHA.fmtMoney(invoiceBalance(invoice, data.payments)); }},
+          {key:"status",label:"Status",render:function(invoice) { return feeStatus(invoice, data.payments); }}
+        ], data.invoices, null)
+      + '</div></section>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Payment history</h2></div><div class="table-wrap">'
+      + KHA.buildTable([
+          {key:"date",label:"Date",render:function(payment) { return KHA.fmtDate(payment.date); }},
+          {key:"receiptNo",label:"Receipt"},
+          {key:"term",label:"Term"},
+          {key:"amount",label:"Amount paid",render:function(payment) { return KHA.fmtMoney(payment.amount); }},
+          {key:"method",label:"Method"}
+        ], data.payments, function(payment) {
+          return '<button class="btn icon" data-print-receipt="'+KHA.esc(payment.id)+'" title="Print receipt">🖨️</button>';
+        })
+      + '</div></section>'
+      + '<div class="no-print" style="display:flex;justify-content:flex-end;margin:12px 0"><button class="btn" data-print-statement="true">🖨️ Print / download fee statement</button></div>';
+    return html;
+  }
+
+  function pageCalendar() {
+    var events = getEvents();
+    var today = KHA.today();
+    var upcoming = events.filter(function(event) { return event.date >= today; });
+    var past = events.filter(function(event) { return event.date < today; }).reverse();
+    var html = KHA.pageHead("School calendar", "Term dates, meetings, activities, exams, and holidays.");
+    html += '<div class="notice info">Upcoming events: '+upcoming.length+'. Dates are published by the school.</div>'
+      + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Upcoming dates</h2></div><div class="activities">'
+      + (upcoming.length ? upcoming.map(eventItem).join("") : '<div class="empty"><strong>No upcoming dates</strong></div>')
+      + '</div></section>'
+      + '<section class="panel"><div class="panel-head"><h2>Past events</h2></div><div class="activities">'
+      + (past.length ? past.slice(0, 20).map(eventItem).join("") : '<div class="empty"><strong>No past events</strong></div>')
+      + '</div></section>';
+    return html;
+  }
+
+  function pageAnnouncements() {
+    var announcements = KHA.load(KHA.STORE.announcements, []).slice().reverse();
+    var html = KHA.pageHead("Announcements", "School news, important reminders, and emergency announcements.");
+    return html + (announcements.length ? announcements.map(announcementCard).join("") : '<div class="notice info">No school announcements have been posted.</div>');
+  }
+
+  function pageDepartmentUpdates() {
+    var updates = parentUpdates();
+    var html = KHA.pageHead("Department updates", "Information shared by school departments with you and your family.");
+    return html + (updates.length ? updates.map(parentUpdateCard).join("") : '<div class="notice info">No department updates have been published for your family.</div>');
+  }
+
+  function pageProfile() {
+    var saved = KHA.load(KHA.STORE.parentProfiles, []).find(function(profile) { return profile.accountId === session.id; }) || {};
+    var student = currentStudent();
+    var firstStudent = linkedStudents()[0] || {};
+    var values = {
+      name: saved.name || session.name,
+      phone: saved.phone || firstStudent.guardianPhone || "",
+      email: saved.email || session.email,
+      address: saved.address || firstStudent.address || "",
+      relationship: saved.relationship || "",
+      emergencyContact: saved.emergencyContact || firstStudent.emergencyContact || "",
+      emergencyPhone: saved.emergencyPhone || firstStudent.emergencyPhone || ""
+    };
+    return KHA.pageHead("Parent profile", "Keep your contact and emergency details up to date.")
+      + (student ? '<div class="notice info">Linked student: '+KHA.esc(student.name)+'. Updating this parent profile does not change the school’s student register.</div>' : "")
+      + '<section class="panel"><div class="panel-body"><form id="parent-profile-form" class="form-grid">'
+      + profileField("name","Parent / guardian name","text",values.name,true)
+      + profileField("phone","Phone number","tel",values.phone,true)
+      + profileField("email","Email address","email",values.email,true)
+      + profileField("address","Home address","text",values.address)
+      + profileField("relationship","Relationship to child","text",values.relationship,true)
+      + profileField("emergencyContact","Emergency contact name","text",values.emergencyContact)
+      + profileField("emergencyPhone","Emergency contact phone","tel",values.emergencyPhone)
+      + '<div class="field full"><button class="btn" type="submit">Save parent profile</button></div>'
+      + '</form></div></section>';
+  }
+
+  function linkChildForm() {
+    return '<form id="link-child-form" class="form-grid">'
+      + profileField("admission","Child admission / registration number","text","",true)
+      + profileField("guardianPhone","Guardian phone registered with the school","tel","",true)
+      + '<div class="field full"><small style="color:var(--muted)">For privacy, both details must match the student record exactly. Contact the school if your guardian phone number needs correction.</small></div>'
+      + '<div class="field full"><button class="btn" type="submit">Verify and link child</button></div>'
+      + '</form>';
+  }
+
+  function profileField(name, label, type, value, required) {
+    return '<div class="field"><label>'+KHA.esc(label)+'</label><input name="'+KHA.esc(name)+'" type="'+KHA.esc(type)+'" value="'+KHA.esc(value||"")+'"'+(required?" required":"")+'></div>';
+  }
+
+  function studentFees(student) {
+    var admission = normalizedAdmission(student.admission);
+    var invoices = admission ? KHA.load(KHA.STORE.invoices, []).filter(function(record) {
+      return normalizedAdmission(record.admission) === admission;
+    }).sort(function(a,b) { return String(b.due||"").localeCompare(String(a.due||"")); }) : [];
+    var payments = admission ? KHA.load(KHA.STORE.payments, []).filter(function(record) {
+      return normalizedAdmission(record.admission) === admission;
+    }).sort(function(a,b) { return String(b.date||"").localeCompare(String(a.date||"")); }) : [];
+    var total = invoices.reduce(function(sum, invoice) { return sum + (Number(invoice.amount)||0); }, 0);
+    var paid = payments.reduce(function(sum, payment) { return sum + (Number(payment.amount)||0); }, 0);
+    return {invoices:invoices, payments:payments, total:total, paid:paid, balance:Math.max(0,total-paid)};
+  }
+
+  function invoiceBalance(invoice, payments) {
+    var paid = payments.filter(function(payment) {
+      return payment.term === invoice.term && (!invoice.year || !payment.year || payment.year === invoice.year);
+    }).reduce(function(sum, payment) { return sum + (Number(payment.amount)||0); }, 0);
+    return Math.max(0, (Number(invoice.amount)||0) - paid);
+  }
+
+  function feeStatus(invoice, payments) {
+    var balance = invoiceBalance(invoice, payments);
+    var value = balance === 0 ? "Paid" : (invoice.due && invoice.due < KHA.today() ? "Overdue" : (balance < Number(invoice.amount) ? "Part-paid" : (invoice.status||"Unpaid")));
+    var color = value === "Paid" ? "green" : value === "Overdue" ? "red" : value === "Part-paid" ? "amber" : "blue";
+    return '<span class="badge '+color+'">'+KHA.esc(value)+'</span>';
+  }
+
+  function getEvents() {
+    var events = KHA.load(KHA.STORE.calendarEvents, []).map(function(event) {
+      return {id:event.id, title:event.title||"School event", type:event.type||"Event", date:event.date||"", location:event.location||"", description:event.description||""};
+    });
+    KHA.load(KHA.STORE.exams, []).forEach(function(exam) {
+      events.push({id:"exam-"+exam.id, title:exam.name||exam.subject||"Examination", type:"Examination", date:exam.date||"", location:exam.room||"", description:[exam.class,exam.subject,exam.term].filter(Boolean).join(" · ")});
+    });
+    return events.filter(function(event) { return event.date; }).sort(function(a,b) { return a.date.localeCompare(b.date); });
+  }
+
+  function notifications(student) {
+    var items = [];
+    KHA.load(KHA.STORE.announcements, []).forEach(function(announcement) {
+      if (announcement.priority === "Urgent" || announcement.priority === "Important") {
+        items.push({icon:announcement.priority==="Urgent"?"🚨":"📢", title:announcement.title, detail:announcement.priority+" announcement"});
+      }
+    });
+    parentUpdates().filter(function(update) {
+      return update.category === "Emergency" || update.category === "Reminder";
+    }).forEach(function(update) {
+      items.push({icon:update.category==="Emergency"?"🚨":"📬", title:update.title, detail:update.departmentName+" · "+update.category});
+    });
+    if (student) {
+      var fee = studentFees(student);
+      fee.invoices.forEach(function(invoice) {
+        if (invoiceBalance(invoice, fee.payments) > 0) {
+          items.push({icon:invoice.due && invoice.due < KHA.today()?"⚠️":"🧾", title:(invoice.due && invoice.due < KHA.today()?"Overdue fee":"Fee due")+" · "+(invoice.term||"Invoice"), detail:"Balance "+KHA.fmtMoney(invoiceBalance(invoice, fee.payments))+(invoice.due?" · Due "+KHA.fmtDate(invoice.due):"")});
+        }
+      });
+    }
+    getEvents().filter(function(event) {
+      var days = (new Date(event.date+"T00:00:00") - new Date(KHA.today()+"T00:00:00")) / 86400000;
+      return days >= 0 && days <= 7;
+    }).forEach(function(event) {
+      items.push({icon:"🗓️", title:event.title, detail:event.type+" · "+KHA.fmtDate(event.date)});
+    });
+    return items.slice(0, 12);
+  }
+
+  function eventItem(event) {
+    return '<div class="activity"><span class="act-ico">🗓️</span><div><p><strong>'+KHA.esc(event.title)+'</strong> <span class="badge blue">'+KHA.esc(event.type)+'</span></p><time>'+KHA.fmtDate(event.date)+(event.location?" · "+KHA.esc(event.location):"")+(event.description?" · "+KHA.esc(event.description):"")+'</time></div></div>';
+  }
+
+  function announcementItem(announcement) {
+    return '<div class="activity"><span class="act-ico">'+(announcement.priority==="Urgent"?"🚨":"📢")+'</span><div><p><strong>'+KHA.esc(announcement.title)+'</strong></p><time>'+KHA.esc(announcement.priority||"Normal")+' · '+KHA.fmtDate(announcement.createdAt)+'</time></div></div>';
+  }
+
+  function announcementCard(announcement) {
+    var color = announcement.priority==="Urgent"?"red":announcement.priority==="Important"?"amber":"blue";
+    return '<section class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>'+KHA.esc(announcement.title)+'</h2><span class="badge '+color+'">'+KHA.esc(announcement.priority||"Normal")+'</span></div><div class="panel-body"><p>'+KHA.esc(announcement.body||"")+'</p><small style="color:var(--muted)">Posted '+KHA.fmtDate(announcement.createdAt)+(announcement.by?" · "+KHA.esc(announcement.by):"")+'</small></div></section>';
+  }
+
+  function paymentInstruction(method,number,merchantCode) {
+    if(!number&&!merchantCode) return "";
+    return '<p><strong>'+KHA.esc(method)+':</strong> '+(number?'Send to '+KHA.esc(number):"")+(merchantCode?' · Merchant / business code '+KHA.esc(merchantCode):"")+'</p>';
+  }
+
+  function paymentRequestBadge(status) {
+    var color=status==="Confirmed"?"green":status==="Rejected"?"red":"amber";
+    return '<span class="badge '+color+'">'+KHA.esc(status||"Pending")+'</span>';
+  }
+
+  function parentUpdates() {
+    var studentIds = linkedStudents().map(function(student) { return student.id; });
+    return KHA.load(KHA.STORE.parentUpdates, []).filter(function(update) {
+      return !update.studentId || studentIds.includes(update.studentId);
+    }).slice().sort(function(a,b) {
+      return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+    });
+  }
+
+  function parentUpdateItem(update) {
+    return '<div class="activity"><span class="act-ico">'+(update.category==="Emergency"?"🚨":"📬")+'</span><div><p><strong>'+KHA.esc(update.title)+'</strong></p><time>'+KHA.esc(update.departmentName||"School")+' · '+KHA.esc(update.category||"General")+' · '+KHA.fmtDate(update.date)+'</time></div></div>';
+  }
+
+  function parentUpdateCard(update) {
+    var color = update.category==="Emergency" ? "red" : update.category==="Reminder" ? "amber" : "blue";
+    return '<section class="panel" style="margin-bottom:12px"><div class="panel-head"><div><h2>'+KHA.esc(update.title)+'</h2><small style="color:var(--muted)">'+KHA.esc(update.departmentName||"School")+' · '+KHA.fmtDate(update.date)+(update.studentName?" · For "+KHA.esc(update.studentName):" · For all parents")+'</small></div><span class="badge '+color+'">'+KHA.esc(update.category||"General")+'</span></div><div class="panel-body"><p>'+KHA.esc(update.message||"")+'</p><small style="color:var(--muted)">Shared by '+KHA.esc(update.by||"School staff")+'</small></div></section>';
+  }
+
+  function buildStatement(student) {
+    var data = studentFees(student);
+    return '<div style="max-width:760px;margin:auto;font-family:Arial,sans-serif;color:#111"><header style="text-align:center;border-bottom:2px solid #1a3d6b;padding-bottom:12px"><div style="width:48px;height:54px;margin:0 auto">'+KHA.BADGE_SVG+'</div><h2>'+KHA.esc(KHA.SCHOOL_NAME)+'</h2><strong>FEE STATEMENT</strong></header>'
+      + '<p><strong>Student:</strong> '+KHA.esc(student.name)+' &nbsp; <strong>Admission:</strong> '+KHA.esc(student.admission||"—")+' &nbsp; <strong>Class:</strong> '+KHA.esc(student.class||"—")+'</p>'
+      + '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Term</th><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Year</th><th style="text-align:right;border-bottom:1px solid #888;padding:7px">Fees</th><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Due</th><th style="text-align:right;border-bottom:1px solid #888;padding:7px">Balance</th></tr></thead><tbody>'
+      + (data.invoices.length ? data.invoices.map(function(invoice) { return '<tr><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.esc(invoice.term||"—")+'</td><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.esc(invoice.year||"—")+'</td><td style="text-align:right;padding:7px;border-bottom:1px solid #ddd">'+KHA.fmtMoney(invoice.amount)+'</td><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.fmtDate(invoice.due)+'</td><td style="text-align:right;padding:7px;border-bottom:1px solid #ddd">'+KHA.fmtMoney(invoiceBalance(invoice,data.payments))+'</td></tr>'; }).join("") : '<tr><td colspan="5" style="padding:10px">No invoices have been recorded.</td></tr>')
+      + '</tbody></table><p style="text-align:right"><strong>Total invoiced: '+KHA.fmtMoney(data.total)+' · Paid: '+KHA.fmtMoney(data.paid)+' · Balance: '+KHA.fmtMoney(data.balance)+'</strong></p>'
+      + '<h3>Payment history</h3><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Date</th><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Receipt</th><th style="text-align:left;border-bottom:1px solid #888;padding:7px">Term</th><th style="text-align:right;border-bottom:1px solid #888;padding:7px">Paid</th></tr></thead><tbody>'
+      + (data.payments.length ? data.payments.map(function(payment) { return '<tr><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.fmtDate(payment.date)+'</td><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.esc(payment.receiptNo||"—")+'</td><td style="padding:7px;border-bottom:1px solid #ddd">'+KHA.esc(payment.term||"—")+'</td><td style="text-align:right;padding:7px;border-bottom:1px solid #ddd">'+KHA.fmtMoney(payment.amount)+'</td></tr>'; }).join("") : '<tr><td colspan="4" style="padding:10px">No payments have been recorded.</td></tr>')
+      + '</tbody></table><p style="text-align:right;font-size:10px;color:#666">Generated '+new Date().toLocaleDateString()+'</p></div>';
+  }
+
+  function buildReceipt(payment, student) {
+    return '<div style="max-width:480px;margin:30px auto;font-family:Arial,sans-serif;color:#111;border:1px solid #bbb;padding:24px"><header style="text-align:center"><div style="width:48px;height:54px;margin:0 auto">'+KHA.BADGE_SVG+'</div><h2>'+KHA.esc(KHA.SCHOOL_NAME)+'</h2><strong>PAYMENT RECEIPT</strong></header>'
+      + '<p><strong>Receipt:</strong> '+KHA.esc(payment.receiptNo||"—")+'<br><strong>Date:</strong> '+KHA.fmtDate(payment.date)+'<br><strong>Student:</strong> '+KHA.esc(student.name)+'<br><strong>Admission:</strong> '+KHA.esc(student.admission||"—")+'<br><strong>Term:</strong> '+KHA.esc(payment.term||"—")+'<br><strong>Method:</strong> '+KHA.esc(payment.method||"—")+'</p>'
+      + '<h3 style="text-align:right;border-top:1px solid #aaa;padding-top:12px">Amount paid: '+KHA.fmtMoney(payment.amount)+'</h3></div>';
+  }
+
+  function normalizedAdmission(value) {
+    return String(value||"").trim().toUpperCase();
+  }
+
+  function normalizedPhone(value) {
+    return String(value||"").replace(/\D/g,"");
+  }
+
+  function wireEvents() {
+    var content = document.getElementById("kha-content");
+    content.addEventListener("click", function(event) {
+      var target = event.target.closest("[data-nav-page],[data-select-child],[data-print-statement],[data-print-receipt]");
+      if (!target) return;
+      if (target.dataset.navPage) { navigate(target.dataset.navPage); return; }
+      if (target.dataset.selectChild) { selectedStudentId = target.dataset.selectChild; renderPage(); return; }
+      if (target.dataset.printStatement) { printContent(buildStatement(currentStudent())); return; }
+      if (target.dataset.printReceipt) {
+        var student = currentStudent();
+        if (!student) return;
+        var payment = studentFees(student).payments.find(function(item) { return item.id === target.dataset.printReceipt; });
+        if (payment) printContent(buildReceipt(payment, student));
+      }
+    });
+    content.addEventListener("submit", function(event) {
+      if (event.target.id === "link-child-form") {
+        event.preventDefault();
+        linkChild(new FormData(event.target));
+      } else if (event.target.id === "parent-profile-form") {
+        event.preventDefault();
+        saveProfile(new FormData(event.target));
+      } else if (event.target.id === "payment-request-form") {
+        event.preventDefault();
+        submitPaymentRequest(new FormData(event.target));
+      }
+    });
+    KHA.wireMessages(content, "parent", session, renderPage);
+  }
+
+  function linkChild(formData) {
+    var admission = normalizedAdmission(formData.get("admission"));
+    var phone = normalizedPhone(formData.get("guardianPhone"));
+    var student = admission ? KHA.load(KHA.STORE.students, []).find(function(record) {
+      return normalizedAdmission(record.admission) === admission
+        && normalizedPhone(record.guardianPhone || record.phone) === phone
+        && phone.length > 0;
+    }) : null;
+    if (!student) {
+      KHA.toast("We could not verify those details. Check the admission number and registered guardian phone with the school.", "error");
+      return;
+    }
+    var links = KHA.load(KHA.STORE.parentLinks, []);
+    if (links.some(function(link) { return link.accountId===session.id && link.studentId===student.id; })) {
+      KHA.toast("This child is already linked to your account.", "error");
+      return;
+    }
+    links.push({id:KHA.uid(), accountId:session.id, studentId:student.id, createdAt:KHA.nowISO()});
+    KHA.save(KHA.STORE.parentLinks, links);
+    selectedStudentId = student.id;
+    KHA.toast("Child linked successfully.", "success");
+    page = "My children";
+    renderPage();
+  }
+
+  function saveProfile(formData) {
+    var profiles = KHA.load(KHA.STORE.parentProfiles, []);
+    var profile = {
+      accountId:session.id,
+      name:String(formData.get("name")||"").trim(),
+      phone:String(formData.get("phone")||"").trim(),
+      email:String(formData.get("email")||"").trim(),
+      address:String(formData.get("address")||"").trim(),
+      relationship:String(formData.get("relationship")||"").trim(),
+      emergencyContact:String(formData.get("emergencyContact")||"").trim(),
+      emergencyPhone:String(formData.get("emergencyPhone")||"").trim(),
+      updatedAt:KHA.nowISO()
+    };
+    var index = profiles.findIndex(function(item) { return item.accountId===session.id; });
+    if (index < 0) profiles.push(profile); else profiles[index] = profile;
+    KHA.save(KHA.STORE.parentProfiles, profiles);
+    KHA.toast("Parent profile saved.", "success");
+    renderPage();
+  }
+
+  function submitPaymentRequest(formData) {
+    var student=currentStudent();
+    var amount=Number(formData.get("amount"));
+    var reference=String(formData.get("transactionReference")||"").trim();
+    var payerPhone=String(formData.get("payerPhone")||"").trim();
+    if(!student||!Number.isFinite(amount)||amount<=0||!reference||!payerPhone){
+      KHA.toast("Enter a valid amount, transaction reference, and payer phone number.","error");
+      return;
+    }
+    var requests=KHA.load(KHA.STORE.paymentRequests,[]);
+    var duplicate=requests.some(function(request){
+      return String(request.transactionReference||"").trim().toLowerCase()===reference.toLowerCase()
+        && request.status!=="Rejected";
+    });
+    if(duplicate){
+      KHA.toast("That transaction reference has already been submitted. Contact the Accountant if you believe this is an error.","error");
+      return;
+    }
+    requests.push({
+      id:KHA.uid(),parentAccountId:session.id,parentName:session.name,
+      studentId:student.id,studentName:student.name,admission:student.admission,
+      class:student.class,method:String(formData.get("method")||""),
+      amount:amount,transactionReference:reference,payerPhone:payerPhone,
+      term:String(formData.get("term")||""),paidOn:String(formData.get("paidOn")||KHA.today()),
+      status:"Pending",createdAt:KHA.nowISO()
+    });
+    if(KHA.save(KHA.STORE.paymentRequests,requests)){
+      KHA.toast("Payment details submitted. The Accountant must verify receipt before your balance changes.","success");
+      renderPage();
+    }
+  }
+
+  function printContent(html) {
+    var area = document.getElementById("parent-print-area");
+    if (!html || !area) return;
+    area.innerHTML = html;
+    document.body.classList.add("parent-printing");
+    window.print();
+  }
+
+  boot();
+});
+</script>
+</body>
+</html>
