@@ -104,13 +104,13 @@ KHA.init("property", function(session) {
       '<button class="btn small" data-action="addBus">+ Register bus</button>')
 
     +'<div class="stats">'
-    +KHA.statCard("📖","Library titles",   books.length,    "Book titles in inventory", true)
-    +KHA.statCard("📤","Books on loan",     outBooks,        issues.length+" total issues")
-    +KHA.statCard("🚌","School buses",      buses.length,    activeBuses+" active")
-    +KHA.statCard("🚗","Drivers",           drivers.length,  "Registered drivers")
-    +KHA.statCard("🗺️","Routes",            routes.length,   "Active transport routes")
-    +KHA.statCard("📍","Pupils on transport",transport.length,"Bus assignments")
-    +KHA.statCard("🪑","Furniture items",assets.reduce(function(sum,a){ return sum+(Number(a.quantity)||0); },0),
+    +KHA.statCard("","Library titles",   books.length,    "Book titles in inventory", true)
+    +KHA.statCard("","Books on loan",     outBooks,        issues.length+" total issues")
+    +KHA.statCard("","School buses",      buses.length,    activeBuses+" active")
+    +KHA.statCard("","Drivers",           drivers.length,  "Registered drivers")
+    +KHA.statCard("","Routes",            routes.length,   "Active transport routes")
+    +KHA.statCard("","Pupils on transport",transport.length,"Bus assignments")
+    +KHA.statCard("","Furniture items",assets.reduce(function(sum,a){ return sum+(Number(a.quantity)||0); },0),
       assets.reduce(function(sum,a){ return sum+(Number(a.repairCount)||0); },0)+" need repair")
     +'</div>'
 
@@ -143,18 +143,18 @@ KHA.init("property", function(session) {
     +'</div>'
 
     +'<div class="cards">'
-    +qCard("📖","Library books",    "Manage book inventory",          "Books")
-    +qCard("🪑","School assets",   "Track furniture and repairs",     "School assets")
-    +qCard("🗂️","Book categories",  "Organise book categories",       "Book categories")
-    +qCard("📤","Book issues",      "Track borrowed books",           "Book issues")
-    +qCard("🚌","Buses",            "Register and manage buses",      "Buses")
-    +qCard("🚗","Drivers",          "Manage bus drivers",             "Drivers")
-    +qCard("🗺️","Routes",           "Define transport routes",        "Routes")
-    +qCard("📍","Transport assign.", "Assign pupils to buses",        "Transport assignments")
+    +qCard("Library books",    "Manage book inventory",          "Books")
+    +qCard("School assets",   "Track furniture and repairs",     "School assets")
+    +qCard("Book categories",  "Organise book categories",       "Book categories")
+    +qCard("Book issues",      "Track borrowed books",           "Book issues")
+    +qCard("Buses",            "Register and manage buses",      "Buses")
+    +qCard("Drivers",          "Manage bus drivers",             "Drivers")
+    +qCard("Routes",           "Define transport routes",        "Routes")
+    +qCard("Transport assign.", "Assign pupils to buses",        "Transport assignments")
     +'</div>';
   }
 
-  function qCard(icon,title,desc,navPage){
+  function qCard(title,desc,navPage){
     return '<div class="module-card">'
       +'<h3>'+KHA.esc(title)+'</h3><p>'+KHA.esc(desc)+'</p>'
       +'<button class="btn small" data-nav-to="'+KHA.esc(navPage)+'">Open →</button>'
@@ -348,7 +348,7 @@ KHA.init("property", function(session) {
     +'<div class="table-wrap">'
     +KHA.buildTable([
         {key:"name",label:"Pupil"},
-        {key:"admission",label:"Adm. #"},
+        {key:"admission",label:"Pupil number"},
         {key:"class",label:"Class"},
         {key:"route",label:"Route"},
         {key:"pickup",label:"Pickup point"},
@@ -406,6 +406,7 @@ KHA.init("property", function(session) {
           +fi("issueDate","Issue date","date",rec.issueDate||KHA.today(),1)
           +fi("dueDate","Due date","date",rec.dueDate,1)
           +fi("returnDate","Return date","date",rec.returnDate)
+          +KHA.academicYearField(rec.year,true)
           +fi("status","Status","select",rec.status||"Issued",1,["Issued","Returned","Overdue","Lost"])
           +'</div>';
       case "buses":
@@ -421,6 +422,7 @@ KHA.init("property", function(session) {
           +fi("roadLicense","Road licence no.","text",rec.roadLicense)
           +fi("lastService","Last service date","date",rec.lastService)
           +fi("nextService","Next service due","date",rec.nextService)
+          +KHA.academicYearField(rec.year,false)
           +fi("mileage","Current mileage (km)","number",rec.mileage)
           +fi("status","Status","select",rec.status||"Active",1,["Active","Maintenance","Inactive","Decommissioned"])
           +'</div>';
@@ -431,6 +433,7 @@ KHA.init("property", function(session) {
           +fi("phone","Phone number","tel",rec.phone,1)
           +fi("bus","Assigned bus","text",rec.bus)
           +fi("licenseExpiry","Licence expiry date","date",rec.licenseExpiry)
+          +KHA.academicYearField(rec.year,false)
           +fi("address","Home address","text",rec.address)
           +fi("status","Status","select",rec.status||"Active",1,["Active","On leave","Inactive"])
           +KHA.photoField("photo",rec.photo,"Driver profile photo")
@@ -447,7 +450,7 @@ KHA.init("property", function(session) {
       case "transport":
         return '<div class="form-grid">'
           +fi("name","Pupil full name","text",rec.name,1)
-          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("admission","Pupil number","text",rec.admission,1)
           +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
           +fi("route","Route","text",rec.route,1)
           +fi("pickup","Pickup point","text",rec.pickup,1)
@@ -508,7 +511,7 @@ KHA.init("property", function(session) {
         ? '<table style="width:100%;border-collapse:collapse;font-size:11px">'
           +'<thead><tr><th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">#</th>'
           +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Pupil</th>'
-          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Adm. #</th>'
+          +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Pupil number</th>'
           +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Class</th>'
           +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Pickup</th>'
           +'<th style="padding:7px;background:#f4f6fa;border:1px solid #dde3ec">Drop-off</th>'

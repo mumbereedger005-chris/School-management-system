@@ -2,14 +2,14 @@
 <!--
   portal-registrar.html — Registrar Portal
   ==========================================
-  Handles all student admissions and enrollment.
+  Handles all pupil admissions and enrollment.
   This portal lets the Registrar:
     • Register new pupils (with passport photo, parent details, medical info)
-    • Edit and view full student profiles
+    • Edit and view full pupil profiles
     • Assign pupils to classes and streams
     • Record boarding or day-scholar status and parent details
     • Print the pupil register and admissions report
-    • Search and filter the student register
+    • Search and filter the pupil register
 
   Authentication: Requires a "registrar" role account from shared.js auth.
   Data storage:   Uses KHA.STORE.students (kha_students) in localStorage.
@@ -95,7 +95,7 @@ KHA.init("registrar", function (session) {
     var html = "";
     switch (page) {
       case "Dashboard":        html = pageDashboard();       break;
-      case "Students":         html = pageStudents();        break;
+      case "Pupils":            html = pageStudents();        break;
       case "Admissions report":html = pageReport();          break;
       case "Parent updates":   html = KHA.renderParentUpdates("registrar", session); break;
       case "School team":      html = window.renderSchoolTeam(); break;
@@ -134,7 +134,7 @@ KHA.init("registrar", function (session) {
 
     return KHA.pageHead(
       "Registrar Dashboard",
-      "Student admissions and enrollment overview — " + KHA.CURRENT_YEAR,
+      "Pupil admissions and enrollment overview — " + KHA.CURRENT_YEAR,
       '<button class="btn small" data-action="registerStudent">+ Register new pupil</button>'
     )
     + '<div class="stats">'
@@ -163,7 +163,7 @@ KHA.init("registrar", function (session) {
                 : '<span class="avatar sm">' + KHA.esc(KHA.initials(s.name)) + '</span>')
               + '</span>'
               + '<div><p><strong>' + KHA.esc(s.name) + '</strong> — ' + KHA.esc(s.class || "—") + (s.stream ? " " + KHA.esc(s.stream) : "") + '</p>'
-              + '<time>' + KHA.fmtDate(s.createdAt) + ' · Adm: ' + KHA.esc(s.admission || "—") + '</time></div>'
+              + '<time>' + KHA.fmtRelativeDate(s.createdAt) + ' · Pupil number: ' + KHA.esc(s.admission || "—") + '</time></div>'
               + '</div>';
           }).join("")
         : '<div class="empty"><strong>No pupils registered yet</strong>Click "Register new pupil" to start.</div>')
@@ -174,7 +174,7 @@ KHA.init("registrar", function (session) {
     /* Quick action cards */
     + '<div class="cards">'
     + quickCard("", "Register pupil",   "Enroll a new pupil with photo and parent details", "registerStudent", "#168560")
-    + quickCard("", "Student register", "View and search all pupil records",                null, "#4863de", "Students")
+    + quickCard("", "Pupil register", "View and search all pupil records",                null, "#4863de", "Pupils")
     + quickCard("", "Admissions report","Print the school admissions summary",              null, "#7c3aed", "Admissions report")
     + '</div>';
   }
@@ -212,7 +212,7 @@ KHA.init("registrar", function (session) {
     if (filterStatus) rows = rows.filter(function (s) { return s.status === filterStatus; });
 
     var html = KHA.pageHead(
-      "Student Register",
+      "Pupil Register",
       rows.length + " pupil(s) shown · " + all.length + " total",
       '<button class="btn secondary small no-print" onclick="window.print()">Print pupil register</button>'
     );
@@ -226,7 +226,7 @@ KHA.init("registrar", function (session) {
 
     /* Search and filter toolbar */
     html += '<div class="filters no-print" style="margin-bottom:12px">'
-      + '<input class="search" id="sSearch" placeholder="Search by name or admission no…" value="' + KHA.esc(searchQ) + '" style="width:260px">'
+      + '<input class="search" id="sSearch" placeholder="Search by name or pupil number…" value="' + KHA.esc(searchQ) + '" style="width:260px">'
       + '<select class="search" id="sClass">'
       +   '<option value="">All classes</option>'
       +   KHA.CLASS_LIST.map(function (c) {
@@ -254,7 +254,7 @@ KHA.init("registrar", function (session) {
             { key: "name", label: "Pupil", render: function (r) {
                 return '<div class="person">'
                   + '<div><strong>' + KHA.esc(r.name) + '</strong>'
-                  + '<small>' + KHA.esc(r.admission || "—") + '</small></div>'
+                  + '<small>Pupil number: ' + KHA.esc(r.admission || "—") + '</small></div>'
                   + '</div>';
             }},
             { key: "gender",   label: "Gender" },
@@ -381,7 +381,7 @@ KHA.init("registrar", function (session) {
       /* ── Personal information ── */
       + '<div class="section-title">Personal information</div>'
       + fld("name",          "Full name (as on birth certificate)", "text",   rec.name,          true)
-      + fld("admission",     "Admission number",                    "text",   rec.admission,     true)
+      + fld("admission",     "Pupil number",                         "text",   rec.admission,     true)
       + fld("gender",        "Gender",                              "select", rec.gender,        true,  ["Female","Male"])
       + fld("dateOfBirth",   "Date of birth",                       "date",   rec.dateOfBirth)
       + fld("nationality",   "Nationality",                         "text",   rec.nationality || "Ugandan")
@@ -393,6 +393,7 @@ KHA.init("registrar", function (session) {
       + fld("class", "Class", "select", rec.class, true, KHA.CLASS_LIST)
       + fld("stream",        "Stream",                              "select", rec.stream,        false, ["A","B","C"])
       + fld("admissionDate", "Date of admission",                   "date",   rec.admissionDate || KHA.today(), true)
+      + KHA.academicYearField(rec.year,true)
       + fld("status",        "Enrollment status",                   "select", rec.status || "Active", true, ["Active","Inactive","Graduated","Suspended"])
       + fld("residency",     "Pupil type",                           "select", rec.residency || "Day scholar", true, ["Day scholar","Boarding"])
       + fld("previousSchool","Previous school attended",            "text",   rec.previousSchool)
@@ -511,7 +512,7 @@ KHA.init("registrar", function (session) {
       /* Details */
       +   '<div>'
       +     '<h3 style="margin:0 0 4px">' + KHA.esc(s.name) + '</h3>'
-      +     '<p style="margin:0 0 8px;color:var(--muted);font-size:11px">Admission: ' + KHA.esc(s.admission || "—") + '</p>'
+      +     '<p style="margin:0 0 8px;color:var(--muted);font-size:11px">Pupil number: ' + KHA.esc(s.admission || "—") + '</p>'
       +     statusBadge(s)
       +   '</div>'
       +   '<div style="grid-column:1/-1">'
@@ -570,7 +571,7 @@ KHA.init("registrar", function (session) {
 
     /* Basic validation */
     if (!name.trim())      { KHA.toast("Pupil name is required.", "error"); return; }
-    if (!admission.trim()) { KHA.toast("Admission number is required.", "error"); return; }
+    if (!admission.trim()) { KHA.toast("Pupil number is required.", "error"); return; }
 
     /* Read the photo file if one was selected */
     var photoInput = form.querySelector('input[data-photo-for="photo"]');
@@ -583,7 +584,7 @@ KHA.init("registrar", function (session) {
 
     /* Check for duplicate admission number (only for new registrations) */
     if (!id && students.some(function (s) { return s.admission === admission; })) {
-      KHA.toast("Admission number " + admission + " is already registered.", "error");
+      KHA.toast("Pupil number " + admission + " is already registered.", "error");
       return;
     }
 

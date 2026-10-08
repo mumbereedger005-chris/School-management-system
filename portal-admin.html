@@ -140,7 +140,7 @@ KHA.init("admin", function(session) {
       case "School calendar":    html = pageSchoolCalendar(); break;
       case "Parent updates":   html = KHA.renderParentUpdates("admin", session); break;
       case "School team":      html = window.renderSchoolTeam(); break;
-      case "Students":           html = pageStudents(); break;
+      case "Pupils":             html = pageStudents(); break;
       case "Teachers":           html = pageTeachers(); break;
       case "Staff profiles":     html = pageStaffProfiles(); break;
       case "Classes":            html = pageClasses(); break;
@@ -148,7 +148,7 @@ KHA.init("admin", function(session) {
       case "Marks":              html = pageMarks(); break;
       case "Report cards":       html = pageReportCards(); break;
       case "Examinations":       html = pageExaminations(); break;
-      case "Student attendance": html = pageStudentAttendance(); break;
+      case "Pupil attendance": html = pageStudentAttendance(); break;
       case "Daily enrollment":   html = pageDailyEnrollment(); break;
       case "Teacher attendance": html = pageTeacherAttendance(); break;
       case "Class timetable":    html = pageTimetable("class"); break;
@@ -252,7 +252,7 @@ KHA.init("admin", function(session) {
     /* recent activity */
     var allRecent = [];
     var collections = [
-      [S.students,"Student"],
+      [S.students,"Pupil"],
       [S.teachers,"Teacher"],
       [S.payments,"Payment"],
       [S.boarding,"Boarding"],
@@ -267,7 +267,7 @@ KHA.init("admin", function(session) {
     var recentHTML = allRecent.slice(0,8).map(function(r){
       return '<div class="activity">'
         +'<div><p><strong>'+KHA.esc(r.label)+'</strong> added to '+KHA.esc(r.type)+'</p>'
-        +'<time>'+KHA.fmtDate(r.at)+'</time></div></div>';
+        +'<time>'+KHA.fmtRelativeDate(r.at)+'</time></div></div>';
     }).join("") || '<div class="empty"><strong>No activity yet</strong>Records added across portals will appear here.</div>';
     var trackedRecent = activities.slice().reverse().slice(0,8);
     if (trackedRecent.length) {
@@ -339,7 +339,7 @@ KHA.init("admin", function(session) {
     /* portal cards */
     + '<section class="panel"><div class="panel-head"><h2>All portals</h2><small>Quick access to every department</small></div><div class="panel-body">'
     + '<div class="cards">'
-    + portalCard("Registrar","Students & admissions","portal-registrar.html","#168560","registrar")
+    + portalCard("Registrar","Pupils & admissions","portal-registrar.html","#168560","registrar")
     + portalCard("Director of Studies","Academics & timetables","portal-dos.html","#7c3aed","dos")
     + portalCard("Accountant","Finance & payments","portal-accountant.html","#b45309","accountant")
     + portalCard("Property Officer","Transport & library","portal-property.html","#0369a1","property")
@@ -366,12 +366,12 @@ KHA.init("admin", function(session) {
 
   function departmentCollections() {
     return [
-      {department:"registrar",name:"Registrar",store:KHA.STORE.students,area:"Student records"},
+      {department:"registrar",name:"Registrar",store:KHA.STORE.students,area:"Pupil records"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.teachers,area:"Teaching staff"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.classes,area:"Classes"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.subjects,area:"Subjects"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.marks,area:"Assessment marks"},
-      {department:"dos",name:"Director of Studies",store:KHA.STORE.attendance,area:"Student attendance"},
+      {department:"dos",name:"Director of Studies",store:KHA.STORE.attendance,area:"Pupil attendance"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.enrollment,area:"Daily enrollment"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.teacherAtt,area:"Teacher attendance"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.timetable,area:"Timetables"},
@@ -407,7 +407,9 @@ KHA.init("admin", function(session) {
 
   function activityTimestamp(value) {
     var date = new Date(value);
-    return value && !isNaN(date.getTime()) ? date.toLocaleString() : "Existing record";
+    return value && !isNaN(date.getTime())
+      ? KHA.fmtRelativeDate(value)+" · "+date.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})
+      : "Existing record";
   }
 
   function pageDepartmentActivity() {
@@ -495,7 +497,7 @@ KHA.init("admin", function(session) {
           ? '<div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Created</th><th>Action</th></tr></thead><tbody>'
             + rAccounts.map(function(a){
                 return '<tr><td>'+KHA.esc(a.name)+'</td><td>'+KHA.esc(a.email)+'</td>'
-                  +'<td>'+KHA.fmtDate(a.createdAt)+'</td>'
+                  +'<td>'+KHA.fmtRelativeDate(a.createdAt)+'</td>'
                   +'<td><button class="btn danger small" data-del-account="'+KHA.esc(a.id)+'">Remove</button></td></tr>';
               }).join("")
             +'</tbody></table></div>'
@@ -533,13 +535,13 @@ KHA.init("admin", function(session) {
         +'<span class="badge '+( a.priority==="Urgent"?"red":a.priority==="Important"?"amber":"blue")+'" style="margin-left:8px">'+KHA.esc(a.priority||"Normal")+'</span></div>'
         +'<button class="btn danger small" data-del-ann="'+KHA.esc(a.id)+'">Delete</button></div>'
         +'<p style="margin:8px 0;font-size:12px;color:#536177">'+KHA.esc(a.body)+'</p>'
-        +'<small style="color:var(--muted)">Posted '+KHA.fmtDate(a.createdAt)+' by '+KHA.esc(a.by)+'</small></div>';
+        +'<small style="color:var(--muted)">Posted '+KHA.fmtRelativeDate(a.createdAt)+' by '+KHA.esc(a.by)+'</small></div>';
     }).join("");
     return html;
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     STUDENTS (admin read-only overview)
+     PUPILS (admin read-only overview)
   ══════════════════════════════════════════════════════════════════ */
   function pageStudents() {
     var allStudents = KHA.load(KHA.STORE.students, []);
@@ -550,7 +552,7 @@ KHA.init("admin", function(session) {
     if (filterClass) rows = rows.filter(function(s){ return s.class === filterClass; });
     if (filterStatus) rows = rows.filter(function(s){ return s.status === filterStatus; });
 
-    var html = KHA.pageHead("Students","All registered pupils — read-only admin view.",
+    var html = KHA.pageHead("Pupils","All registered pupils — read-only admin view.",
       '<button class="btn secondary small no-print" data-action="printStudents">🖨️ Print all pupils</button>');
     html += searchBar("students", filterClass, filterStatus);
     html += '<div class="table-wrap">'
@@ -559,7 +561,7 @@ KHA.init("admin", function(session) {
             return '<span class="avatar sm">'+(r.photo?'<img src="'+KHA.esc(r.photo)+'" alt="">':KHA.esc(KHA.initials(r.name)))+'</span>';
           }},
           {key:"name",label:"Name",render:function(r){
-            return '<div class="person"><div><strong>'+KHA.esc(r.name)+'</strong><small>'+KHA.esc(r.admission)+'</small></div></div>';
+            return '<div class="person"><div><strong>'+KHA.esc(r.name)+'</strong><small>Pupil number: '+KHA.esc(r.admission||"—")+'</small></div></div>';
           }},
           {key:"class",label:"Class",render:function(r){ return KHA.esc(r.class)+" "+KHA.esc(r.stream||""); }},
           {key:"guardian",label:"Guardian contact",render:function(r){
@@ -672,7 +674,7 @@ KHA.init("admin", function(session) {
   }
   function pageMarks() {
     return genericPage("Marks","Assessment marks",KHA.STORE.marks,"marks record",[
-      {key:"admission",label:"Admission"},{key:"name",label:"Pupil"},
+      {key:"admission",label:"Pupil number"},{key:"name",label:"Pupil"},
       {key:"class",label:"Class"},{key:"subject",label:"Subject"},
       {key:"term",label:"Term"},{key:"score",label:"Score"},
       {key:"outOf",label:"Out of"},
@@ -708,7 +710,7 @@ KHA.init("admin", function(session) {
   }
   function pageScholarships() {
     return genericPage("Scholarships","Discounts and bursaries",KHA.STORE.scholarships,"scholarship",[
-      {key:"name",label:"Pupil"},{key:"admission",label:"Adm. #"},
+      {key:"name",label:"Pupil"},{key:"admission",label:"Pupil number"},
       {key:"type",label:"Type"},{key:"amount",label:"Discount",render:function(r){ return KHA.fmtMoney(r.amount); }},
       {key:"term",label:"Term"}
     ], scholarshipForm);
@@ -743,7 +745,7 @@ KHA.init("admin", function(session) {
   }
   function pageTransport() {
     return genericPage("Transport assignments","Pupils assigned to buses",KHA.STORE.transport,"assignment",[
-      {key:"name",label:"Pupil"},{key:"admission",label:"Adm. #"},
+      {key:"name",label:"Pupil"},{key:"admission",label:"Pupil number"},
       {key:"route",label:"Route"},{key:"pickup",label:"Pickup"},
       {key:"dropoff",label:"Drop-off"},{key:"fee",label:"Fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
       {key:"status",label:"Status",render:statusBadge}
@@ -765,7 +767,7 @@ KHA.init("admin", function(session) {
   }
   function pageBoardingAssignments() {
     return genericPage("Boarding assignments","Pupils in dormitories",KHA.STORE.boarding,"assignment",[
-      {key:"name",label:"Pupil"},{key:"admission",label:"Adm. #"},
+      {key:"name",label:"Pupil"},{key:"admission",label:"Pupil number"},
       {key:"dormitory",label:"Dormitory"},{key:"bed",label:"Bed"},
       {key:"term",label:"Term"},{key:"fee",label:"Fee",render:function(r){ return KHA.fmtMoney(r.fee); }},
       {key:"status",label:"Status",render:statusBadge}
@@ -783,10 +785,10 @@ KHA.init("admin", function(session) {
   }
 
   function pageStudentAttendance() {
-    return genericPage("Student attendance","Daily attendance records",KHA.STORE.attendance,"record",[
+    return genericPage("Pupil attendance","Daily attendance records",KHA.STORE.attendance,"record",[
       {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
       {key:"pupil",label:"Pupil",render:function(r){ return KHA.esc(r.pupilName||r.name||""); }},
-      {key:"admission",label:"Adm. #"},
+      {key:"admission",label:"Pupil number"},
       {key:"class",label:"Class"},
       {key:"status",label:"Status",render:statusBadge},
       {key:"reason",label:"Reason",render:function(r){ return KHA.esc(r.reason||r.absenceReason||""); }}
@@ -813,8 +815,8 @@ KHA.init("admin", function(session) {
     var presentToday = todayRows.reduce(function(sum, r){ return sum + (Number(r.present)||0); }, 0);
 
     html += '<div class="stats" style="margin-bottom:12px">'
-      + KHA.statCard("🧾","Today total", totalToday, "Students on register today")
-      + KHA.statCard("✅","Present", presentToday, "Students present")
+      + KHA.statCard("🧾","Today total", totalToday, "Pupils on register today")
+      + KHA.statCard("✅","Present", presentToday, "Pupils present")
       + KHA.statCard("📊","Records", rows.length, "Enrollment entries saved")
       + '</div>'
       + '<div class="table-wrap">'
@@ -848,7 +850,7 @@ KHA.init("admin", function(session) {
         return String(record.ttType||record.type||"").toLowerCase()==="exam";
       }).sort(function(a,b){
         return String(a.day||"").localeCompare(String(b.day||""))
-          || String(a.period||"").localeCompare(String(b.period||""));
+          || String(a.startTime||a.period||"").localeCompare(String(b.startTime||b.period||""));
       });
       return KHA.pageHead("Examination timetable","Mid-term and end-of-term examination schedule.",
         '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print timetable</button>')
@@ -857,7 +859,7 @@ KHA.init("admin", function(session) {
             {key:"class",label:"Class"},
             {key:"subject",label:"Subject"},
             {key:"day",label:"Day"},
-            {key:"period",label:"Period"},
+            {key:"period",label:"Time",render:function(record){ return KHA.esc(record.startTime&&record.endTime?record.startTime+"–"+record.endTime:record.period||"—"); }},
             {key:"teacher",label:"Teacher"},
             {key:"room",label:"Room"},
           ],exams,null)+'</div>';
@@ -865,10 +867,23 @@ KHA.init("admin", function(session) {
     var rows = KHA.load(KHA.STORE.timetable, []).filter(function(r){
       return (r.type||r.ttType||"").toLowerCase()===type;
     });
-    var html = KHA.pageHead("Class timetable", "View timetable schedule.",
-      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print</button>');
-    html += buildTimetableGrid(rows, type);
-    return html;
+    rows.sort(function(a,b){
+      return String(a.class||"").localeCompare(String(b.class||""))
+        || String(a.scheduleType||"Weekly").localeCompare(String(b.scheduleType||"Weekly"))
+        || String(a.day||"").localeCompare(String(b.day||""))
+        || String(a.startTime||a.period||"").localeCompare(String(b.startTime||b.period||""));
+    });
+    return KHA.pageHead("Class timetable", "View every class, weekly, weekend and remedial timetable record.",
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print</button>')
+      + '<div class="table-wrap">'+KHA.buildTable([
+        {key:"scheduleType",label:"Schedule",render:function(record){ return KHA.esc(record.scheduleType||"Weekly"); }},
+        {key:"class",label:"Class"},
+        {key:"day",label:"Day"},
+        {key:"period",label:"Time",render:function(record){ return KHA.esc(record.startTime&&record.endTime?record.startTime+"–"+record.endTime:record.period||"—"); }},
+        {key:"subject",label:"Subject"},
+        {key:"teacher",label:"Teacher"},
+        {key:"room",label:"Room"}
+      ],rows,null)+'</div>';
   }
 
   function pageFinancialReports() {
@@ -937,46 +952,15 @@ KHA.init("admin", function(session) {
             {key:"class",label:"Class"},
             {key:"term",label:"Term"},
             {key:"year",label:"Academic year"},
-            {key:"createdAt",label:"Generated",render:function(r){ return KHA.fmtDate(r.createdAt); }},
+            {key:"overallPercentage",label:"Average",render:function(r){ return r.overallPercentage===undefined||r.overallPercentage===null?"—":KHA.esc(r.overallPercentage)+"%"; }},
+            {key:"promotionStatus",label:"Term 3 result"},
+            {key:"createdAt",label:"Generated",render:function(r){ return KHA.fmtRelativeDate(r.createdAt); }},
             {key:"createdBy",label:"Prepared by"}
           ],reports,function(report){
             return '<button class="btn small" data-view-report="'+KHA.esc(report.id)+'">View / print</button>';
           })+'</div>'
         : '<div class="notice info">The Director of Studies has not generated any report cards yet.</div>')
       + '<div id="rcPreview"></div>';
-  }
-
-  /* ══════════════════════════════════════════════════════════════════
-     TIMETABLE GRID
-  ══════════════════════════════════════════════════════════════════ */
-  function buildTimetableGrid(rows, type) {
-    var days = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
-    var periods = ["7:30–8:10","8:10–8:50","8:50–9:30","9:30–10:10","BREAK","10:30–11:10","11:10–11:50","11:50–12:30","LUNCH","13:30–14:10","14:10–14:50","14:50–15:30"];
-    var html = '<div style="overflow-x:auto"><table class="timetable-grid">'
-      +'<thead><tr><th>Period</th>'+days.map(function(d){ return '<th>'+d+'</th>'; }).join("")+'</tr></thead>'
-      +'<tbody>';
-    periods.forEach(function(p){
-      if (p==="BREAK"||p==="LUNCH") {
-        html += '<tr><td colspan="6" style="text-align:center;background:#f9fafb;color:var(--muted);font-size:9px;padding:5px">'+p+'</td></tr>';
-        return;
-      }
-      html += '<tr><td class="time-col">'+p+'</td>';
-      days.forEach(function(d){
-        var slot = rows.find(function(r){ return r.day===d && r.period===p; });
-        if (slot) {
-          html += '<td><div class="tt-cell"><div class="subject">'+KHA.esc(slot.subject||slot.name||"")+'</div>'
-            +'<div class="teacher">'+KHA.esc(slot.teacher||slot.class||"")+'</div>'
-            +(slot.room?'<div style="font-size:8px;color:#aaa">'+KHA.esc(slot.room)+'</div>':"")
-            +'</div></td>';
-        } else {
-          html += '<td><span class="tt-empty">—</span></td>';
-        }
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-    if (!rows.length) html = '<div class="notice info">No class timetable entries have been recorded.</div>' + html;
-    return html;
   }
 
   /* ══════════════════════════════════════════════════════════════════
@@ -1012,6 +996,7 @@ KHA.init("admin", function(session) {
       + f("qualification","Qualification","select",rec.qualification,0,["Certificate","Diploma","Bachelor's","Master's","PhD"])
       + f("experience","Years experience","number",rec.experience)
       + f("employmentDate","Employment date","date",rec.employmentDate)
+      + KHA.academicYearField(rec.year,false)
       + f("salary","Monthly salary (UGX)","number",rec.salary)
       + f("status","Status","select",rec.status,1,["Active","On leave","Probation","Terminated"])
       + f("address","Home address","text",rec.address,0,"","full")
@@ -1045,12 +1030,12 @@ KHA.init("admin", function(session) {
   function marksForm(rec) {
     rec = rec || {};
     return '<div class="form-grid">'
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("name","Pupil name","text",rec.name,1)
       + f("class","Class & stream","text",rec.class,1)
       + f("subject","Subject","text",rec.subject,1)
       + f("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
-      + f("year","Academic year","text",rec.year||KHA.CURRENT_YEAR,1)
+      + KHA.academicYearField(rec.year,true)
       + f("score","Score","number",rec.score,1)
       + f("outOf","Out of","number",rec.outOf||100,1)
       + f("remarks","Teacher remarks","textarea",rec.remarks,0,"","full")
@@ -1064,6 +1049,7 @@ KHA.init("admin", function(session) {
       + f("class","Class & stream","text",rec.class,1)
       + f("subject","Subject","text",rec.subject,1)
       + f("date","Date","date",rec.date,1)
+      + KHA.academicYearField(rec.year,true)
       + f("startTime","Start time","time",rec.startTime,1)
       + f("endTime","End time","time",rec.endTime)
       + f("room","Exam room","text",rec.room)
@@ -1078,6 +1064,7 @@ KHA.init("admin", function(session) {
       + f("title","Event name","text",rec.title,1)
       + f("type","Event category","select",rec.type,1,["Opening date","Closing date","Parents meeting","Sports day","School trip","Examination","Holiday","Other"])
       + f("date","Date","date",rec.date,1)
+      + KHA.academicYearField(rec.year,true)
       + f("location","Location","text",rec.location)
       + f("description","Details / notes","textarea",rec.description,0,"","full")
       + '</div>';
@@ -1089,7 +1076,7 @@ KHA.init("admin", function(session) {
       + f("name","Structure name","text",rec.name,1)
       + f("class","Class / category","text",rec.class,1)
       + f("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3","Annual"])
-      + f("year","Academic year","text",rec.year||KHA.CURRENT_YEAR,1)
+      + KHA.academicYearField(rec.year,true)
       + f("tuition","Tuition (UGX)","number",rec.tuition,1)
       + f("boarding","Boarding (UGX)","number",rec.boarding)
       + f("transport","Transport (UGX)","number",rec.transport)
@@ -1107,12 +1094,13 @@ KHA.init("admin", function(session) {
     return '<div class="form-grid">'
       + f("receiptNo","Receipt number","text",rec.receiptNo,1)
       + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("class","Class & stream","text",rec.class)
       + f("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
       + f("amount","Amount paid (UGX)","number",rec.amount,1)
       + f("method","Payment method","select",rec.method,1,["Cash","Mobile Money","Bank transfer","Cheque","Card"])
       + f("date","Payment date","date",rec.date||KHA.today(),1)
+      + KHA.academicYearField(rec.year,true)
       + f("receivedBy","Received by","text",rec.receivedBy)
       + f("status","Status","select",rec.status,1,["Complete","Partial","Refunded"])
       + '</div>';
@@ -1122,10 +1110,11 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("type","Type","select",rec.type,1,["Scholarship","Discount","Bursary","Staff benefit"])
       + f("amount","Discount amount (UGX)","number",rec.amount,1)
       + f("term","Term","text",rec.term)
+      + KHA.academicYearField(rec.year,true)
       + f("reason","Reason / notes","textarea",rec.reason,0,"","full")
       + '</div>';
   }
@@ -1153,6 +1142,7 @@ KHA.init("admin", function(session) {
       + f("insuranceExpiry","Insurance expiry","date",rec.insuranceExpiry)
       + f("lastService","Last service date","date",rec.lastService)
       + f("nextService","Next service due","date",rec.nextService)
+      + KHA.academicYearField(rec.year,false)
       + f("status","Status","select",rec.status,1,["Active","Maintenance","Inactive"])
       + '</div>';
   }
@@ -1165,6 +1155,7 @@ KHA.init("admin", function(session) {
       + f("phone","Phone","tel",rec.phone,1)
       + f("bus","Assigned bus","text",rec.bus)
       + f("licenseExpiry","Licence expiry","date",rec.licenseExpiry)
+      + KHA.academicYearField(rec.year,false)
       + f("status","Status","select",rec.status,1,["Active","On leave","Inactive"])
       + KHA.photoField("photo", rec.photo, "Driver photo")
       + '</div>';
@@ -1185,7 +1176,7 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("route","Route","text",rec.route,1)
       + f("pickup","Pickup point","text",rec.pickup,1)
       + f("dropoff","Drop-off point","text",rec.dropoff,1)
@@ -1219,7 +1210,7 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("dormitory","Dormitory","text",rec.dormitory,1)
       + f("bed","Bed number","text",rec.bed,1)
       + f("term","Term","text",rec.term)
@@ -1244,8 +1235,9 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + f("date","Date","date",rec.date||KHA.today(),1)
+      + KHA.academicYearField(rec.year,true)
       + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
+      + f("admission","Pupil number","text",rec.admission,1)
       + f("class","Class & stream","text",rec.class,1)
       + f("checkIn","Check-in time","time",rec.checkIn)
       + f("status","Status","select",rec.status,1,["Present","Absent","Late","Excused"])
@@ -1256,6 +1248,7 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + f("date","Date","date",rec.date||KHA.today(),1)
+      + KHA.academicYearField(rec.year,true)
       + f("name","Teacher name","text",rec.name,1)
       + f("staffId","Staff ID","text",rec.staffId)
       + f("checkIn","Check-in time","time",rec.checkIn)
@@ -1268,8 +1261,11 @@ KHA.init("admin", function(session) {
     rec = rec || {};
     return '<div class="form-grid">'
       + '<input type="hidden" name="type" value="'+KHA.esc(ttType)+'">'
+      + '<input type="hidden" name="ttType" value="'+KHA.esc(String(ttType).toLowerCase()==='class'?'Class':'Exam')+'">'
       + f("day","Day","select",rec.day,1,["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"])
-      + f("period","Period / time","select",rec.period,1,["7:30–8:10","8:10–8:50","8:50–9:30","9:30–10:10","10:30–11:10","11:10–11:50","11:50–12:30","13:30–14:10","14:10–14:50","14:50–15:30"])
+      + f("startTime","Start time","time",rec.startTime,1)
+      + f("endTime","End time","time",rec.endTime,1)
+      + KHA.academicYearField(rec.year,true)
       + f("class","Class & stream","text",rec.class,1)
       + f("subject","Subject","text",rec.subject,1)
       + f("teacher","Teacher","text",rec.teacher)
@@ -1353,7 +1349,7 @@ KHA.init("admin", function(session) {
         var students = KHA.load(KHA.STORE.students, []);
         printAdminTable("Registered pupils", [
           {key:"name",label:"Name"},
-          {key:"admission",label:"Admission no."},
+          {key:"admission",label:"Pupil number"},
           {key:"classDisplay",label:"Class"},
           {key:"guardian",label:"Guardian"},
           {key:"guardianContact",label:"Contact"},
@@ -1404,7 +1400,7 @@ KHA.init("admin", function(session) {
         preview.innerHTML = '<section class="panel"><div class="panel-head"><h2>'
           +KHA.esc(report.name)+" · "+KHA.esc(report.term)+" · "+KHA.esc(report.year)
           +'</h2></div>'
-          +buildReportCard(reportStudent,report.marks||[],report.term,report.year)
+          +buildReportCard(reportStudent,report.marks||[],report.term,report.year,report)
           +'</section>';
         preview.scrollIntoView({behavior:"smooth"});
         return;
@@ -1564,10 +1560,18 @@ KHA.init("admin", function(session) {
     );
     document.getElementById("mSave").addEventListener("click", function(){
       var form = document.getElementById("mForm");
+      if (!form.reportValidity()) return;
       var fd = new FormData(form);
+      var startTime=fd.get("startTime");
+      var endTime=fd.get("endTime");
+      if (!startTime||!endTime||startTime>=endTime) {
+        KHA.toast("End time must be later than start time.", "error");
+        return;
+      }
       var records2 = KHA.load(KHA.STORE.timetable, []);
       var entry = { id: id||KHA.uid(), type: ttType, createdAt: KHA.nowISO() };
       fd.forEach(function(v,k){ entry[k]=v; });
+      entry.period=startTime+"–"+endTime;
       if (id) {
         var idx = records2.findIndex(function(r){ return r.id===id; });
         if (idx>-1) records2[idx]=entry;
@@ -1734,38 +1738,68 @@ KHA.init("admin", function(session) {
   /* ══════════════════════════════════════════════════════════════════
      REPORT CARD BUILDER
   ══════════════════════════════════════════════════════════════════ */
-  function buildReportCard(student, marks, term, year) {
+  function buildReportCard(student, marks, term, year, report) {
     var total = marks.reduce(function(s,m){ return s+(Number(m.score)||0); }, 0);
-    var avg   = marks.length ? (total/marks.length).toFixed(1) : "—";
-    var sortedByScore = marks.slice().sort(function(a,b){ return (Number(b.score)||0)-(Number(a.score)||0); });
+    var maxTotal = marks.reduce(function(s,m){ return s+(Number(m.outOf)||100); },0);
+    var avg   = marks.length ? (total/Math.max(maxTotal,1)*100).toFixed(1) : "—";
+    var classmates = KHA.load(KHA.STORE.students,[]).filter(function(pupil){
+      return pupil.status==="Active" && pupil.class===student.class;
+    });
+    var allMarks = KHA.load(KHA.STORE.marks,[]);
+    function markBelongsToStudent(mark,pupil) {
+      if(mark.admission&&pupil.admission) return mark.admission===pupil.admission;
+      return mark.pupilName===pupil.name;
+    }
+    function pupilAverage(pupil) {
+      var pupilMarks=allMarks.filter(function(mark){
+        return mark.term===term && (!mark.year || mark.year===year) && mark.class===student.class
+          && markBelongsToStudent(mark,pupil);
+      });
+      var score=pupilMarks.reduce(function(sum,mark){ return sum+(Number(mark.score)||0); },0);
+      var max=pupilMarks.reduce(function(sum,mark){ return sum+(Number(mark.outOf)||100); },0);
+      return max?score/max*100:0;
+    }
+    var position=classmates.filter(function(pupil){ return pupilAverage(pupil)>pupilAverage(student); }).length+1;
+    var promotionStatus=report&&report.promotionStatus
+      ? report.promotionStatus
+      : term==="Term 3"?(marks.length?(Number(avg)>=40?"Promoted":"Repeated"):"Not assessed"):"";
+    var colors=["#315c9b","#1f7a68","#8054a5","#b06b24","#b34855","#397c9d","#7b7d27","#5b68a8","#a14b77","#4c7a43"];
+    var colorIndex=KHA.CLASS_LIST.indexOf(student.class);
+    var accent=colors[(colorIndex<0?0:colorIndex)%colors.length];
 
-    var rowsHTML = marks.map(function(m, i){
+    function marksTable(sectionMarks) {
+      if(!sectionMarks.length) return '<p style="color:#667085;font-size:10px">No marks recorded.</p>';
+      var rowsHTML = sectionMarks.map(function(m, i){
       var grade = m.grade || KHA.gradeFromScore(m.score, m.outOf);
       var cls   = (grade==="F9")?"red":(grade.startsWith("D"))?"green":"amber";
       var pct   = m.outOf ? Math.round((Number(m.score)/Number(m.outOf))*100)+"%" : "—";
       return '<tr>'
         +'<td>'+(i+1)+'</td>'
         +'<td>'+KHA.esc(m.subject)+'</td>'
-        +'<td style="text-align:center">'+KHA.esc(m.score||"—")+'</td>'
+        +'<td style="text-align:center">'+KHA.esc(m.score===undefined||m.score===""?"—":m.score)+'</td>'
         +'<td style="text-align:center">'+KHA.esc(m.outOf||"—")+'</td>'
         +'<td style="text-align:center">'+pct+'</td>'
         +'<td class="grade-cell"><span style="color:'+(cls==="green"?"#168560":cls==="red"?"#bd4a4a":"#a97015")+'">'+KHA.esc(grade)+'</span></td>'
         +'<td>'+KHA.esc(KHA.gradeRemark(grade))+'</td>'
         +'<td>'+KHA.esc(m.remarks||"")+'</td>'
         +'</tr>';
-    }).join("");
+      }).join("");
+      return '<table class="report-table"><thead><tr>'
+        +'<th>#</th><th>Subject</th><th>Score</th><th>Out of</th><th>%</th><th>Grade</th><th>Remark</th><th>Comments</th>'
+        +'</tr></thead><tbody>'+rowsHTML+'</tbody></table>';
+    }
+    var midtermMarks=marks.filter(function(mark){ return /mid.?term/i.test(mark.assessmentType||""); });
+    var endTermMarks=marks.filter(function(mark){ return /end.?of.?term/i.test(mark.assessmentType||""); });
+    var otherMarks=marks.filter(function(mark){ return !/mid.?term|end.?of.?term/i.test(mark.assessmentType||""); });
 
     return '<div id="reportCardPrint">'
-      +'<div class="report-card" style="max-width:700px;margin:0 auto">'
-
-      /* watermark */
-      +'<div class="report-watermark">'+KHA.BADGE_SVG+'</div>'
+      +'<div class="report-card" style="max-width:700px;margin:0 auto;border-top:8px solid '+accent+'">'
 
       +'<div class="report-content">'
       /* header */
       +'<div class="report-header">'
       +'<div style="width:60px;height:70px;margin:0 auto 8px">'+KHA.BADGE_SVG+'</div>'
-      +'<h2>'+KHA.esc(KHA.SCHOOL_NAME)+'</h2>'
+      +'<h2 style="color:'+accent+'">'+KHA.esc(KHA.SCHOOL_NAME)+'</h2>'
       +'<p>'+KHA.esc(KHA.SCHOOL_SUB)+' · Tel: +256 XXX XXXXXX</p>'
       +'<p style="font-size:13px;font-weight:700;margin-top:6px;color:#1a3d6b">ACADEMIC PROGRESS REPORT — '+KHA.esc(term)+' '+KHA.esc(year)+'</p>'
       +'</div>'
@@ -1779,7 +1813,7 @@ KHA.init("admin", function(session) {
       +'</div>'
       +'<div class="report-info">'
       +'<strong>'+KHA.esc(student.name)+'</strong><br>'
-      +'Admission No: '+KHA.esc(student.admission)+'<br>'
+      +'Pupil number: '+KHA.esc(student.admission)+'<br>'
       +'Class: '+KHA.esc(student.class)+(student.stream?" "+KHA.esc(student.stream):"")+'<br>'
       +'Gender: '+KHA.esc(student.gender||"—")+'<br>'
       +'Guardian: '+KHA.esc(student.guardian||"—")+'<br>'
@@ -1787,19 +1821,19 @@ KHA.init("admin", function(session) {
       +'</div>'
       +'</div>'
 
-      /* marks table */
-      +(marks.length
-        ? '<table class="report-table"><thead><tr>'
-          +'<th>#</th><th>Subject</th><th>Score</th><th>Out of</th><th>%</th><th>Grade</th><th>Remark</th><th>Comments</th>'
-          +'</tr></thead><tbody>'+rowsHTML+'</tbody></table>'
-        : '<p style="text-align:center;color:var(--muted);font-size:11px;padding:16px">No marks entered for this term.</p>')
+      +'<h3 style="color:'+accent+';border-bottom:1px solid '+accent+'">Mid-term results</h3>'+marksTable(midtermMarks)
+      +'<h3 style="color:'+accent+';border-bottom:1px solid '+accent+'">End-of-term results</h3>'+marksTable(endTermMarks)
+      +(otherMarks.length?'<h3 style="color:'+accent+'">Other assessments</h3>'+marksTable(otherMarks):"")
+      +(!marks.length?'<p style="text-align:center;color:var(--muted);font-size:11px;padding:16px">No marks entered for this term.</p>':"")
 
       /* summary */
       +'<div class="report-summary" style="margin-top:10px">'
       +'<div><strong>Total marks:</strong> '+total+'</div>'
-      +'<div><strong>Average:</strong> '+avg+'%</div>'
+      +'<div><strong>Average:</strong> '+(avg==="—"?"—":avg+"%")+'</div>'
       +'<div><strong>Subjects:</strong> '+marks.length+'</div>'
+      +'<div><strong>Class position:</strong> '+position+' / '+classmates.length+'</div>'
       +'</div>'
+      +(promotionStatus?'<p style="padding:8px;text-align:center;border:2px solid '+accent+';color:'+accent+';font-weight:700"><strong>End-of-year result:</strong> '+KHA.esc(promotionStatus)+' (40% promotion threshold)</p>':"")
 
       /* comments */
       +'<div style="font-size:11px;margin-bottom:12px">'

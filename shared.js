@@ -49,6 +49,9 @@ window.KHA = (function () {
 
   /** Current academic year label displayed throughout the system. */
   const CURRENT_YEAR = "2025–2026";
+  const ACADEMIC_YEARS = Array.from({length:80}, function(_, index) {
+    return (2010+index)+"–"+(2011+index);
+  });
 
   /**
    * Complete ordered list of ALL classes at Five Star Model School.
@@ -100,9 +103,9 @@ window.KHA = (function () {
       color: "#4863de",
       groups: {
         "School overview":   ["Dashboard", "Department activity", "Messages", "Portal access", "Announcements", "School calendar", "Parent updates"],
-        "People":            ["Students", "Teachers", "Staff profiles", "School team"],
+        "People":            ["Pupils", "Teachers", "Staff profiles", "School team"],
         "Academics":         ["Classes", "Subjects", "Marks", "Report cards", "Examinations"],
-        "Attendance":        ["Student attendance", "Daily enrollment", "Teacher attendance"],
+        "Attendance":        ["Pupil attendance", "Daily enrollment", "Teacher attendance"],
         "Timetables":        ["Class timetable", "Examination timetable"],
         "Finance":           ["Fees structure", "Payments", "Scholarships", "Financial reports"],
         "Property":          ["School assets", "Books", "Buses", "Drivers", "Routes", "Transport assignments"],
@@ -112,7 +115,7 @@ window.KHA = (function () {
     },
 
     /**
-     * Registrar – handles student admissions and enrollment records.
+     * Registrar – handles pupil admissions and enrollment records.
      * Can register new pupils, upload pupil and parent photos, record parent
      * contacts, and assign classes and boarding status.
      */
@@ -121,7 +124,7 @@ window.KHA = (function () {
       title: "Admissions Registrar",
       color: "#168560",
       groups: {
-        "Admissions & Records": ["Dashboard", "Students", "Admissions report", "School team", "Messages", "Parent updates"]
+        "Admissions & Records": ["Dashboard", "Pupils", "Admissions report", "School team", "Messages", "Parent updates"]
       }
     },
 
@@ -137,9 +140,9 @@ window.KHA = (function () {
       groups: {
         "Staff management":  ["Dashboard", "Teachers", "Staff profiles", "School team", "Messages", "Parent updates"],
         "Curriculum":        ["Classes", "Streams", "Subjects"],
-        "Timetables":        ["Class timetable", "Teacher timetable", "Subject timetable", "Examination timetable"],
+        "Timetables":        ["Class timetable", "Examination timetable"],
         "Assessment":        ["Marks", "Report cards", "Examinations"],
-        "Attendance":        ["Student attendance", "Daily enrollment", "Teacher attendance"]
+        "Attendance":        ["Pupil attendance", "Daily enrollment", "Teacher attendance"]
       }
     },
 
@@ -212,7 +215,7 @@ window.KHA = (function () {
     "Announcements":          "📢",
     "School calendar":       "🗓️",
     "Parent updates":        "📬",
-    "Students":               "🎓",
+    "Pupils":                 "🎓",
     "Admissions report":      "📊",
     "Teachers":               "👩‍🏫",
     "Staff profiles":         "👥",
@@ -223,7 +226,7 @@ window.KHA = (function () {
     "Marks":                  "✏️",
     "Report cards":           "📄",
     "Examinations":           "📝",
-    "Student attendance":     "📋",
+    "Pupil attendance":       "📋",
     "Daily enrollment":       "🧾",
     "Teacher attendance":     "📋",
     "Class timetable":        "📅",
@@ -318,7 +321,8 @@ window.KHA = (function () {
    * Used as the default value for date fields and attendance queries.
    */
   function today() {
-    return new Date().toISOString().slice(0, 10);
+    var date = new Date();
+    return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0");
   }
 
   /** Full ISO-8601 timestamp for createdAt / updatedAt fields. */
@@ -363,10 +367,43 @@ window.KHA = (function () {
   function fmtDate(d) {
     if (!d) return "—";
     try {
-      return new Date(d).toLocaleDateString("en-GB", {
+      var value=String(d);
+      var date=/^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(Number(value.slice(0,4)),Number(value.slice(5,7))-1,Number(value.slice(8,10)))
+        : new Date(d);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleDateString("en-GB", {
         day: "numeric", month: "short", year: "numeric"
       });
     } catch (_) { return d; }
+  }
+
+  /**
+   * Format a record date relative to the local day, using an explicit date for older records.
+   */
+  function fmtRelativeDate(d) {
+    if (!d) return "—";
+    var value=String(d);
+    var date=/^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? new Date(Number(value.slice(0,4)),Number(value.slice(5,7))-1,Number(value.slice(8,10)))
+      : new Date(d);
+    if (Number.isNaN(date.getTime())) return value;
+    var now=new Date();
+    var recordDay=Date.UTC(date.getFullYear(),date.getMonth(),date.getDate());
+    var todayDay=Date.UTC(now.getFullYear(),now.getMonth(),now.getDate());
+    var days=Math.round((todayDay-recordDay)/86400000);
+    if (days===0) return "Today";
+    if (days===1) return "Yesterday";
+    return fmtDate(d);
+  }
+
+  function academicYearField(value, required) {
+    var selected=value||CURRENT_YEAR;
+    var years=ACADEMIC_YEARS.slice();
+    if (years.indexOf(selected)===-1) years.unshift(selected);
+    return '<div class="field"><label>Academic year</label><select name="year"'+(required?" required":"")+'>'
+      +years.map(function(year){ return '<option value="'+esc(year)+'"'+(year===selected?" selected":"")+'>'+esc(year)+'</option>'; }).join("")
+      +'</select></div>';
   }
 
   /**
@@ -525,13 +562,13 @@ window.KHA = (function () {
 
     function departmentStoreInfo(key) {
       const stores = {
-        students:["registrar","Student records"],
+        students:["registrar","Pupil records"],
         teachers:["dos","Teaching staff"],
         classes:["dos","Classes"],
         subjects:["dos","Subjects"],
         marks:["dos","Assessment marks"],
         reportCards:["dos","Report cards"],
-        attendance:["dos","Student attendance"],
+        attendance:["dos","Pupil attendance"],
         enrollment:["dos","Daily enrollment"],
         teacherAtt:["dos","Teacher attendance"],
         timetable:["dos","Timetables"],
@@ -975,13 +1012,6 @@ tbody tr:last-child td { border: 0; }
   background: #fff; padding: 22px; font-family: serif;
   border: 2px solid #233957; position: relative; overflow: hidden;
 }
-/* SVG watermark behind the report card content */
-.report-watermark {
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%) rotate(-25deg);
-  opacity: .06; pointer-events: none; z-index: 0;
-  width: 200px; height: 230px;
-}
 .report-content { position: relative; z-index: 1; }
 /* School header inside the report card */
 .report-header  { text-align: center; padding-bottom: 12px; border-bottom: 2px solid #233957; margin-bottom: 14px; }
@@ -1085,21 +1115,6 @@ tbody tr:last-child td { border: 0; }
 /* ── PRINT STYLES ─────────────────────────────────────────────────────── */
 @media print {
   body { background: #fff; }
-  body::before {
-    content: url("star%20logo.png");
-    position: fixed;
-    z-index: 2;
-    top: 50%;
-    left: 50%;
-    width: 30vw;
-    height: 30vh;
-    max-width: 35vw;
-    max-height: 35vh;
-    object-fit: contain;
-    transform: translate(-50%, -50%);
-    opacity: .07;
-    pointer-events: none;
-  }
   #root, .main { position: relative; z-index: 1; }
   .print-only { display: block !important; }
   /* Hide navigation and non-essential UI when printing */
@@ -1684,7 +1699,7 @@ tbody tr:last-child td { border: 0; }
     return '<div class="table-scroll"><table>'
       + '<thead><tr>'
       + cols.map(c => '<th>' + esc(c.label) + '</th>').join("")
-      + (actFn ? '<th>Actions</th>' : '')
+      + (actFn ? '<th class="no-print">Actions</th>' : '')
       + '</tr></thead>'
       + '<tbody>'
       + rows.map(row =>
@@ -1692,7 +1707,7 @@ tbody tr:last-child td { border: 0; }
           + cols.map(c =>
               '<td>' + (c.render ? c.render(row) : esc(row[c.key] ?? "—")) + '</td>'
             ).join("")
-          + (actFn ? '<td><div class="td-actions">' + actFn(row) + '</div></td>' : '')
+          + (actFn ? '<td class="no-print"><div class="td-actions">' + actFn(row) + '</div></td>' : '')
           + '</tr>'
         ).join("")
       + '</tbody></table></div>';
@@ -1749,7 +1764,7 @@ tbody tr:last-child td { border: 0; }
       + '<form data-parent-update-form class="form-grid">'
       + '<input type="hidden" name="updateId" value="">'
       + '<div class="field"><label>Category</label><select name="category" required>' + parentUpdateCategories.map(category => '<option value="' + esc(category) + '">' + esc(category) + '</option>').join("") + '</select></div>'
-      + '<div class="field"><label>Share with</label><select name="studentId"><option value="">All parents</option>' + students.filter(student => student.status !== "Transferred" && student.status !== "Graduated").map(student => '<option value="' + esc(student.id) + '">' + esc(student.name) + ' · ' + esc(student.admission || "No admission number") + '</option>').join("") + '</select></div>'
+      + '<div class="field"><label>Share with</label><select name="studentId"><option value="">All parents</option>' + students.filter(student => student.status !== "Transferred" && student.status !== "Graduated").map(student => '<option value="' + esc(student.id) + '">' + esc(student.name) + ' · ' + esc(student.admission || "No pupil number") + '</option>').join("") + '</select></div>'
       + '<div class="field"><label>Title</label><input name="title" maxlength="120" required></div>'
       + '<div class="field"><label>Date</label><input name="date" type="date" value="' + esc(today()) + '" required></div>'
       + '<div class="field full"><label>Message</label><textarea name="message" maxlength="2000" required></textarea></div>'
@@ -1791,7 +1806,7 @@ tbody tr:last-child td { border: 0; }
       const targetId = String(data.get("studentId") || "");
       const target = targetId ? load(STORE.students, []).find(student => student.id === targetId) : null;
       if (targetId && !target) {
-        toast("The selected student could not be found. Refresh and try again.", "error");
+        toast("The selected pupil could not be found. Refresh and try again.", "error");
         return;
       }
       const existingIndex = updateId ? records.findIndex(record => record.id === updateId) : -1;
@@ -1907,7 +1922,7 @@ tbody tr:last-child td { border: 0; }
           .map(key => '<option value="' + esc(key) + '">' + esc(ROLES[key].title) + '</option>').join("")
         + '<option value="parent-account">Specific parent account</option>';
     } else if (isParent) {
-      targetOptions = linkedStudents.map(student => '<option value="' + esc(student.id) + '">' + esc(student.name) + ' · ' + esc(student.admission || "") + '</option>').join("");
+      targetOptions = linkedStudents.map(student => '<option value="' + esc(student.id) + '">' + esc(student.name) + ' · Pupil number: ' + esc(student.admission || "") + '</option>').join("");
     }
     const recipientOptions = isAdmin ? '<div class="field"><label>Send to</label><select name="recipient" required>' + targetOptions + '</select></div>'
       : isParent ? '<div class="field"><label>About child</label><select name="studentId" required>' + (targetOptions || '<option value="">Link a child first</option>') + '</select></div>'
@@ -2069,14 +2084,14 @@ tbody tr:last-child td { border: 0; }
   =========================================================================== */
   return {
     /* Identity */
-    SCHOOL_NAME, SCHOOL_SUB, SCHOOL_MOTTO, CURRENT_YEAR, CLASS_LIST,
+    SCHOOL_NAME, SCHOOL_SUB, SCHOOL_MOTTO, CURRENT_YEAR, ACADEMIC_YEARS, CLASS_LIST,
     BADGE_SVG, ROLES, ICONS,
 
     /* Data storage */
     STORE, load, save,
 
     /* Utilities */
-    esc, today, nowISO, uid, initials, fmtMoney, fmtDate,
+    esc, today, nowISO, uid, initials, fmtMoney, fmtDate, fmtRelativeDate, academicYearField,
     gradeFromScore, gradeRemark,
 
     /* UI helpers */

@@ -105,11 +105,11 @@ KHA.init("accountant", function(session) {
       '<button class="btn small" data-action="addPayment">+ Record payment</button>')
 
     + '<div class="stats">'
-    + KHA.statCard("💵","Fees collected",   KHA.fmtMoney(collected),  payments.length+" payments", true)
-    + KHA.statCard("🧾","Fees assessed",   KHA.fmtMoney(invoiced),   invoices.length+" fee charges")
-    + KHA.statCard("⚠️","Outstanding",      KHA.fmtMoney(outstanding),unpaidCount+" accounts with balances")
-    + KHA.statCard("🏅","Discounts given",  KHA.fmtMoney(discounts),  schols.length+" scholarships")
-    + KHA.statCard("💰","Fee structures",   fees.length,              "Term fee schedules")
+    + KHA.statCard("","Fees collected",   KHA.fmtMoney(collected),  payments.length+" payments", true)
+    + KHA.statCard("","Fees assessed",   KHA.fmtMoney(invoiced),   invoices.length+" fee charges")
+    + KHA.statCard("","Outstanding",      KHA.fmtMoney(outstanding),unpaidCount+" accounts with balances")
+    + KHA.statCard("","Discounts given",  KHA.fmtMoney(discounts),  schols.length+" scholarships")
+    + KHA.statCard("","Fee structures",   fees.length,              "Term fee schedules")
     + '</div>'
 
     + '<div class="grid2">'
@@ -127,9 +127,9 @@ KHA.init("accountant", function(session) {
     + '<section class="panel"><div class="panel-head"><h2>Recent payments</h2></div>'
     + '<div class="activities">'
     + (recentPay.length ? recentPay.map(function(p){
-        return '<div class="activity"><span class="act-ico">💵</span>'
+        return '<div class="activity">'
           +'<div><p><strong>'+KHA.esc(p.name||"—")+'</strong> · '+KHA.fmtMoney(p.amount)+'</p>'
-          +'<time>'+KHA.esc(p.method||"Cash")+' · '+KHA.fmtDate(p.date)+'</time></div></div>';
+          +'<time>'+KHA.esc(p.method||"Cash")+' · '+KHA.fmtRelativeDate(p.date)+'</time></div></div>';
       }).join("")
       : '<div class="empty"><strong>No payments yet</strong>Record a payment to see it here.</div>')
     + '</div></section>'
@@ -206,7 +206,7 @@ KHA.init("accountant", function(session) {
     + KHA.buildTable([
         {key:"receiptNo",label:"Receipt #"},
         {key:"name",label:"Pupil"},
-        {key:"admission",label:"Adm. #"},
+        {key:"admission",label:"Pupil number"},
         {key:"class",label:"Class"},
         {key:"term",label:"Term"},
         {key:"amount",label:"Amount paid",render:function(r){ return '<strong>'+KHA.fmtMoney(r.amount)+'</strong>'; }},
@@ -237,7 +237,7 @@ KHA.init("accountant", function(session) {
     + '<div class="table-wrap">'
     + KHA.buildTable([
         {key:"name",label:"Pupil"},
-        {key:"admission",label:"Adm. #"},
+        {key:"admission",label:"Pupil number"},
         {key:"type",label:"Type",render:function(r){ return '<span class="badge blue">'+KHA.esc(r.type||"")+'</span>'; }},
         {key:"amount",label:"Discount amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
         {key:"term",label:"Term"},
@@ -353,7 +353,7 @@ KHA.init("accountant", function(session) {
       +'<div class="receipt-row"><span>Receipt No.</span><strong>'+KHA.esc(payment.receiptNo||"—")+'</strong></div>'
       +'<div class="receipt-row"><span>Date</span><span>'+KHA.fmtDate(payment.date)+'</span></div>'
       +'<div class="receipt-row"><span>Received from</span><span>'+KHA.esc(payment.name||"—")+'</span></div>'
-      +'<div class="receipt-row"><span>Admission no.</span><span>'+KHA.esc(payment.admission||"—")+'</span></div>'
+      +'<div class="receipt-row"><span>Pupil number</span><span>'+KHA.esc(payment.admission||"—")+'</span></div>'
       +'<div class="receipt-row"><span>Class</span><span>'+KHA.esc(payment.class||"—")+'</span></div>'
       +'<div class="receipt-row"><span>Term</span><span>'+KHA.esc(payment.term||"—")+'</span></div>'
       +'<div class="receipt-row"><span>Payment method</span><span>'+KHA.esc(payment.method||"Cash")+'</span></div>'
@@ -378,8 +378,8 @@ KHA.init("accountant", function(session) {
       + '<div class="notice warn">Confirm a payment only after checking the school’s official MTN, Airtel, or bank statement. A parent-entered transaction reference is not proof of receipt.</div>'
       + '<div class="table-wrap">'+KHA.buildTable([
         {key:"createdAt",label:"Submitted",render:function(r){ return KHA.fmtDate(r.createdAt); }},
-        {key:"studentName",label:"Student"},
-        {key:"admission",label:"Admission"},
+        {key:"studentName",label:"Pupil"},
+        {key:"admission",label:"Pupil number"},
         {key:"method",label:"Method"},
         {key:"payerPhone",label:"Payer phone"},
         {key:"transactionReference",label:"Transaction reference"},
@@ -491,7 +491,7 @@ KHA.init("accountant", function(session) {
           +fi("name","Structure name","text",rec.name,1)
           +fi("class","Class / category","select",rec.class,1,["All classes"].concat(KHA.CLASS_LIST))
           +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3","Annual"])
-          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR,1)
+          +KHA.academicYearField(rec.year,true)
           +'<div class="section-title">Fee components (UGX)</div>'
           +fi("tuition","Tuition fees","number",rec.tuition,1)
           +fi("boarding","Boarding fees","number",rec.boarding)
@@ -508,12 +508,13 @@ KHA.init("accountant", function(session) {
         return '<div class="form-grid">'
           +fi("receiptNo","Receipt number","text",rec.receiptNo||("REC-"+Date.now()),1)
           +fi("name","Pupil full name","text",rec.name,1)
-          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("admission","Pupil number","text",rec.admission,1)
           +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
           +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
           +fi("amount","Amount paid (UGX)","number",rec.amount,1)
           +fi("method","Payment method","select",rec.method||"Cash",1,["Cash","Mobile Money","Bank transfer","Cheque","Card"])
           +fi("date","Payment date","date",rec.date||KHA.today(),1)
+          +KHA.academicYearField(rec.year,true)
           +fi("receivedBy","Received by","text",rec.receivedBy||session.name)
           +fi("balance","Balance remaining (UGX)","number",rec.balance)
           +fi("status","Status","select",rec.status||"Complete",1,["Complete","Partial","Refunded"])
@@ -521,10 +522,11 @@ KHA.init("accountant", function(session) {
       case "scholarships":
         return '<div class="form-grid">'
           +fi("name","Pupil full name","text",rec.name,1)
-          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("admission","Pupil number","text",rec.admission,1)
           +fi("type","Award type","select",rec.type,1,["Scholarship","Discount","Bursary","Staff benefit","Government sponsorship"])
           +fi("amount","Discount / award amount (UGX)","number",rec.amount,1)
           +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3","Annual"])
+          +KHA.academicYearField(rec.year,true)
           +fi("reason","Reason / notes","textarea",rec.reason,0,[],"full")
           +'</div>';
       default: return '<p>No form for this record type.</p>';

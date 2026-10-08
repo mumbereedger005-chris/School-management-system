@@ -81,11 +81,11 @@ KHA.init("boarding", function(session) {
       '<button class="btn small" data-action="addAssignment">+ Assign pupil</button>')
 
     +'<div class="stats">'
-    +KHA.statCard("🏠","Dormitories",    dorms.length,    boys+" boys · "+girls+" girls", true)
-    +KHA.statCard("🛏️","Total beds",     totalBeds,       "Registered beds")
-    +KHA.statCard("✅","Occupied",        occupied,        occupancyPct+"% occupancy")
-    +KHA.statCard("🔓","Available",       available,       "Beds ready for assignment")
-    +KHA.statCard("👮","House staff",     masters.length,  "Masters & matrons")
+    +KHA.statCard("","Dormitories",    dorms.length,    boys+" boys · "+girls+" girls", true)
+    +KHA.statCard("","Total beds",     totalBeds,       "Registered beds")
+    +KHA.statCard("","Occupied",        occupied,        occupancyPct+"% occupancy")
+    +KHA.statCard("","Available",       available,       "Beds ready for assignment")
+    +KHA.statCard("","House staff",     masters.length,  "Masters & matrons")
     +'</div>'
 
     +'<div class="grid2">'
@@ -123,14 +123,14 @@ KHA.init("boarding", function(session) {
     +'</div>'
 
     +'<div class="cards">'
-    +qCard("🏠","Dormitories",       "Create and manage dormitories",      "Dormitories")
-    +qCard("🛏️","Beds",              "Register individual beds",            "Beds")
-    +qCard("📋","Bed assignments",   "Assign pupils to beds",              "Boarding assignments")
-    +qCard("👮","House masters",     "Manage house masters and matrons",   "House masters")
+    +qCard("Dormitories",       "Create and manage dormitories",      "Dormitories")
+    +qCard("Beds",              "Register individual beds",            "Beds")
+    +qCard("Bed assignments",   "Assign pupils to beds",              "Boarding assignments")
+    +qCard("House masters",     "Manage house masters and matrons",   "House masters")
     +'</div>';
   }
 
-  function qCard(icon,title,desc,navPage){
+  function qCard(title,desc,navPage){
     return '<div class="module-card">'
       +'<h3>'+KHA.esc(title)+'</h3><p>'+KHA.esc(desc)+'</p>'
       +'<button class="btn small" data-nav-to="'+KHA.esc(navPage)+'">Open →</button>'
@@ -215,7 +215,7 @@ KHA.init("boarding", function(session) {
         {key:"bedNumber",label:"Bed number",render:function(r){ return '<strong>'+KHA.esc(r.bedNumber||"—")+'</strong>'; }},
         {key:"occupant",label:"Current occupant",render:function(r){
           var a=assigned.find(function(x){ return x.bed===r.bedNumber && x.dormitory===r.dormitory; });
-          return a?KHA.esc(a.name)+'<br><small>'+KHA.esc(a.admission||"")+'</small>':'<span style="color:var(--muted)">Vacant</span>';
+          return a?KHA.esc(a.name)+'<br><small>Pupil number: '+KHA.esc(a.admission||"")+'</small>':'<span style="color:var(--muted)">Vacant</span>';
         }},
         {key:"status",label:"Status",render:sBadge}
       ],rows,function(r){
@@ -245,7 +245,7 @@ KHA.init("boarding", function(session) {
     +'<div class="table-wrap">'
     +KHA.buildTable([
         {key:"name",label:"Pupil"},
-        {key:"admission",label:"Adm. #"},
+        {key:"admission",label:"Pupil number"},
         {key:"class",label:"Class"},
         {key:"gender",label:"Gender"},
         {key:"dormitory",label:"Dormitory"},
@@ -360,13 +360,13 @@ KHA.init("boarding", function(session) {
       case "boarding":
         return '<div class="form-grid">'
           +fi("name","Pupil full name","text",rec.name,1)
-          +fi("admission","Admission no.","text",rec.admission,1)
+          +fi("admission","Pupil number","text",rec.admission,1)
           +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
           +fi("gender","Gender","select",rec.gender,1,["Female","Male"])
           +fi("dormitory","Dormitory","text",rec.dormitory,1)
           +fi("bed","Bed number","text",rec.bed,1)
           +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
-          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR)
+          +KHA.academicYearField(rec.year,true)
           +fi("fee","Boarding fee (UGX)","number",rec.fee)
           +fi("guardian","Guardian name","text",rec.guardian)
           +fi("guardianPhone","Guardian phone","tel",rec.guardianPhone)
@@ -382,6 +382,7 @@ KHA.init("boarding", function(session) {
           +fi("email","Email","email",rec.email)
           +fi("qualification","Qualification","text",rec.qualification)
           +fi("employmentDate","Employment date","date",rec.employmentDate)
+          +KHA.academicYearField(rec.year,false)
           +fi("address","Home address","text",rec.address)
           +fi("status","Status","select",rec.status||"Active",1,["Active","On leave","Inactive"])
           +KHA.photoField("photo",rec.photo,"Profile photo (passport size)")
