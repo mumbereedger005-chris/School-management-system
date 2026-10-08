@@ -1091,10 +1091,10 @@ tbody tr:last-child td { border: 0; }
     z-index: 2;
     top: 50%;
     left: 50%;
-    width: 48vw;
-    height: 48vh;
-    max-width: 55vw;
-    max-height: 55vh;
+    width: 30vw;
+    height: 30vh;
+    max-width: 35vw;
+    max-height: 35vh;
     object-fit: contain;
     transform: translate(-50%, -50%);
     opacity: .07;
