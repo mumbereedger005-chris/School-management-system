@@ -5,7 +5,6 @@
   Handles all financial management for Five Star Model School.
   Responsibilities:
     • Create school fees structures (tuition, boarding, transport, meals, etc.)
-    • Generate per-student invoices for each term
     • Record fee payments and track balances
     • Issue printable receipts
     • Manage scholarships, discounts, and bursaries
@@ -56,7 +55,6 @@ KHA.init("accountant", function(session) {
     switch(page){
       case "Dashboard":        h=pgDashboard();     break;
       case "Fees structure":   h=pgFeesStructure(); break;
-      case "Invoices":         h=pgInvoices();      break;
       case "Payments":         h=pgPayments();      break;
       case "Scholarships":     h=pgScholarships();  break;
       case "Financial reports":h=pgFinancialReports(); break;
@@ -108,8 +106,8 @@ KHA.init("accountant", function(session) {
 
     + '<div class="stats">'
     + KHA.statCard("💵","Fees collected",   KHA.fmtMoney(collected),  payments.length+" payments", true)
-    + KHA.statCard("🧾","Total invoiced",   KHA.fmtMoney(invoiced),   invoices.length+" invoices")
-    + KHA.statCard("⚠️","Outstanding",      KHA.fmtMoney(outstanding),unpaidCount+" unpaid invoices")
+    + KHA.statCard("🧾","Fees assessed",   KHA.fmtMoney(invoiced),   invoices.length+" fee charges")
+    + KHA.statCard("⚠️","Outstanding",      KHA.fmtMoney(outstanding),unpaidCount+" accounts with balances")
     + KHA.statCard("🏅","Discounts given",  KHA.fmtMoney(discounts),  schols.length+" scholarships")
     + KHA.statCard("💰","Fee structures",   fees.length,              "Term fee schedules")
     + '</div>'
@@ -186,36 +184,6 @@ KHA.init("accountant", function(session) {
       ], rows, function(r){
         return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="fees" title="Edit">✏️</button>'
           +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="fees" title="Delete">🗑️</button>';
-      })
-    + '</div>';
-  }
-
-  /* ══════════════════════════════════════════════════════
-     INVOICES — per-student term fee bills
-  ══════════════════════════════════════════════════════ */
-  function pgInvoices() {
-    var rows = KHA.load(KHA.STORE.invoices, []).filter(function(i){
-      if (!searchQ) return true;
-      var q = searchQ.toLowerCase();
-      return (i.name||"").toLowerCase().includes(q)||(i.admission||"").toLowerCase().includes(q);
-    });
-    return KHA.pageHead("Invoices",
-      rows.length+" invoice(s)",
-      '<input class="search" id="tSearch" placeholder="Search pupil or admission…" value="'+KHA.esc(searchQ)+'">'
-      +'<button class="btn small" data-action="addRecord" data-store="invoices">+ Create invoice</button>')
-    + '<div class="table-wrap">'
-    + KHA.buildTable([
-        {key:"name",label:"Pupil"},
-        {key:"admission",label:"Adm. #"},
-        {key:"class",label:"Class"},
-        {key:"term",label:"Term"},
-        {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
-        {key:"due",label:"Due date",render:function(r){ return KHA.fmtDate(r.due); }},
-        {key:"status",label:"Status",render:sBadge}
-      ], rows, function(r){
-        return '<button class="btn icon" data-view-invoice="'+KHA.esc(r.id)+'" title="View/Print">🖨️</button>'
-          +'<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="invoices" title="Edit">✏️</button>'
-          +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="invoices" title="Delete">🗑️</button>';
       })
     + '</div>';
   }
@@ -306,7 +274,7 @@ KHA.init("accountant", function(session) {
 
     + '<div class="stats">'
     + KHA.statCard("💵","Total collected",   KHA.fmtMoney(collected), payments.length+" payments", true)
-    + KHA.statCard("🧾","Total invoiced",    KHA.fmtMoney(invoiced),  invoices.length+" invoices")
+    + KHA.statCard("🧾","Fees assessed",    KHA.fmtMoney(invoiced),  invoices.length+" fee charges")
     + KHA.statCard("⚠️","Outstanding",       KHA.fmtMoney(outstanding),"Unpaid balance")
     + KHA.statCard("🏅","Discounts given",   KHA.fmtMoney(discounts), schols.length+" awards")
     + '</div>'
@@ -536,17 +504,6 @@ KHA.init("accountant", function(session) {
           +fi("development","Development fund","number",rec.development)
           +fi("due","Due date","date",rec.due)
           +'</div>';
-      case "invoices":
-        return '<div class="form-grid">'
-          +fi("name","Pupil full name","text",rec.name,1)
-          +fi("admission","Admission no.","text",rec.admission,1)
-          +fi("class","Class","select",rec.class,1,KHA.CLASS_LIST)
-          +fi("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
-          +fi("year","Academic year","text",rec.year||KHA.CURRENT_YEAR)
-          +fi("amount","Total amount (UGX)","number",rec.amount,1)
-          +fi("due","Due date","date",rec.due,1)
-          +fi("status","Status","select",rec.status||"Unpaid",1,["Unpaid","Part-paid","Paid","Overdue"])
-          +'</div>';
       case "payments":
         return '<div class="form-grid">'
           +fi("receiptNo","Receipt number","text",rec.receiptNo||("REC-"+Date.now()),1)
@@ -597,7 +554,7 @@ KHA.init("accountant", function(session) {
     var storeId = KHA.STORE[storeKey]||storeKey;
     var records = KHA.load(storeId,[]);
     var rec     = id ? records.find(function(r){ return r.id===id; }) : null;
-    var labels  = {fees:"fees structure",invoices:"invoice",payments:"payment",scholarships:"scholarship"};
+    var labels  = {fees:"fees structure",payments:"payment",scholarships:"scholarship"};
     KHA.openModal(
       '<div class="modal-head"><h2>'+(rec?"Edit":"Create new")+" "+KHA.esc(labels[storeKey]||storeKey)+'</h2>'
       +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
@@ -615,39 +572,6 @@ KHA.init("accountant", function(session) {
       '<div class="modal-head"><h2>Payment receipt — '+KHA.esc(p.receiptNo||"")+'</h2>'
       +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
       +'<div class="modal-body">'+buildReceipt(p)+'</div>'
-      +'<div class="modal-foot"><button class="btn secondary" onclick="KHA.closeModal()">Close</button></div>');
-  }
-
-  function openInvoiceModal(id) {
-    var inv = KHA.load(KHA.STORE.invoices,[]).find(function(x){ return x.id===id; });
-    if (!inv) return;
-    var fees = KHA.load(KHA.STORE.fees,[]).find(function(f){ return f.class===inv.class && f.term===inv.term; })||{};
-    var paid = KHA.load(KHA.STORE.payments,[])
-      .filter(function(p){ return p.admission===inv.admission && p.term===inv.term; })
-      .reduce(function(s,p){ return s+(Number(p.amount)||0); }, 0);
-    var balance = Math.max(0, (Number(inv.amount)||0)-paid);
-
-    KHA.openModal(
-      '<div class="modal-head"><h2>Invoice — '+KHA.esc(inv.name||"")+'</h2>'
-      +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
-      +'<div class="modal-body">'
-      +'<div class="receipt" style="max-width:100%">'
-      +'<div class="receipt-header">'
-      +'<div style="width:48px;height:55px;margin:0 auto 8px">'+KHA.BADGE_SVG+'</div>'
-      +'<h3 style="margin:4px 0">'+KHA.esc(KHA.SCHOOL_NAME)+'</h3>'
-      +'<p style="font-size:13px;font-weight:700;margin-top:6px;color:#1a3d6b">FEE INVOICE</p>'
-      +'</div>'
-      +'<div class="receipt-row"><span>Pupil</span><strong>'+KHA.esc(inv.name)+'</strong></div>'
-      +'<div class="receipt-row"><span>Admission</span><span>'+KHA.esc(inv.admission)+'</span></div>'
-      +'<div class="receipt-row"><span>Class</span><span>'+KHA.esc(inv.class)+'</span></div>'
-      +'<div class="receipt-row"><span>Term</span><span>'+KHA.esc(inv.term)+'</span></div>'
-      +'<div class="receipt-row"><span>Due date</span><span>'+KHA.fmtDate(inv.due)+'</span></div>'
-      +'<div class="receipt-row"><span>Total billed</span><strong>'+KHA.fmtMoney(inv.amount)+'</strong></div>'
-      +'<div class="receipt-row"><span>Amount paid</span><span>'+KHA.fmtMoney(paid)+'</span></div>'
-      +'<div class="receipt-total"><span>Balance due</span><span style="color:var(--red)">'+KHA.fmtMoney(balance)+'</span></div>'
-      +'</div>'
-      +'<div class="no-print" style="margin-top:12px"><button class="btn secondary" onclick="window.print()">🖨️ Print invoice</button></div>'
-      +'</div>'
       +'<div class="modal-foot"><button class="btn secondary" onclick="KHA.closeModal()">Close</button></div>');
   }
 
@@ -688,7 +612,7 @@ KHA.init("accountant", function(session) {
     if(ts) ts.addEventListener("input",function(){ searchQ=this.value; renderPage(); });
 
     content.addEventListener("click",function(e){
-      var t=e.target.closest("[data-action],[data-nav-to],[data-edit-record],[data-del-record],[data-print-receipt],[data-view-invoice],[data-confirm-payment],[data-reject-payment]");
+      var t=e.target.closest("[data-action],[data-nav-to],[data-edit-record],[data-del-record],[data-print-receipt],[data-confirm-payment],[data-reject-payment]");
       if(!t) return;
       if(t.dataset.navTo)                            { navigate(t.dataset.navTo); return; }
       if(t.dataset.action==="addPayment")            { openRecordModal("payments",null); return; }
@@ -696,7 +620,6 @@ KHA.init("accountant", function(session) {
       if(t.dataset.editRecord)                       { openRecordModal(t.dataset.store,t.dataset.editRecord); return; }
       if(t.dataset.delRecord)                        { deleteRecord(t.dataset.store,t.dataset.delRecord); return; }
       if(t.dataset.printReceipt)                     { openReceiptModal(t.dataset.printReceipt); return; }
-      if(t.dataset.viewInvoice)                      { openInvoiceModal(t.dataset.viewInvoice); return; }
       if(t.dataset.confirmPayment)                    { decidePaymentRequest(t.dataset.confirmPayment,true); return; }
       if(t.dataset.rejectPayment)                     { decidePaymentRequest(t.dataset.rejectPayment,false); return; }
     });

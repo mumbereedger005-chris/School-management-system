@@ -411,9 +411,7 @@ window.renderSchoolTeam = function () {
     + '}'
     /* Print */
     + '@media print{'
-    +   '.team-bar,.modal-backdrop,.no-print{display:none!important}'
-    +   '.team-grid{grid-template-columns:repeat(4,1fr);gap:8px}'
-    +   '.sc{box-shadow:none;border:1px solid #dde3ec;page-break-inside:avoid}'
+    +   '.team-pg{display:none!important}'
     + '}'
     + '</style>';
 
@@ -449,7 +447,6 @@ window.renderSchoolTeam = function () {
       }).join("")
     + '</select>'
     + '<span class="cnt" id="team-cnt">' + SCHOOL_TEAM.length + ' staff</span>'
-    + '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print</button>'
     + '</div>';
 
   /* ── Build one card HTML ── */
@@ -593,9 +590,7 @@ window.renderSchoolTeam = function () {
     + '<div class="team-pg">'
     + '<div class="pg-hd no-print"><div><h1>🏫 School team</h1>'
     + '<p>Five Star Model School · ' + SCHOOL_TEAM.length + ' staff members</p></div>'
-    + '<div class="actions no-print">'
-    + '<button class="btn secondary small" onclick="window.print()">🖨️ Print directory</button>'
-    + '</div></div>'
+    + '</div>'
     + statsHTML
     + toolbarHTML
     + gridHTML

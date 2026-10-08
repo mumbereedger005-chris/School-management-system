@@ -40,12 +40,35 @@ KHA.init("property", function(session) {
     renderPage();
   }
 
+  function pgAssets(){
+    var rows=KHA.load(KHA.STORE.propertyAssets,[]).filter(function(asset){
+      if(!searchQ)return true;
+      var q=searchQ.toLowerCase();
+      return (asset.assetType||"").toLowerCase().includes(q)
+        ||(asset.location||"").toLowerCase().includes(q);
+    });
+    return KHA.pageHead("School assets",rows.length+" inventory record(s)",
+      '<input class="search" id="tSearch" placeholder="Search asset or location…" value="'+KHA.esc(searchQ)+'">'
+      +'<button class="btn small" data-action="addRecord" data-store="propertyAssets">+ Add asset</button>')
+    +'<div class="table-wrap">'+KHA.buildTable([
+        {key:"assetType",label:"Asset"},
+        {key:"quantity",label:"Quantity"},
+        {key:"repairCount",label:"Needs repair"},
+        {key:"location",label:"Location"},
+        {key:"notes",label:"Notes"}
+      ],rows,function(asset){
+        return '<button class="btn icon" data-edit-record="'+KHA.esc(asset.id)+'" data-store="propertyAssets" title="Edit">✏️</button>'
+          +'<button class="btn icon danger" data-del-record="'+KHA.esc(asset.id)+'" data-store="propertyAssets" title="Delete">🗑️</button>';
+      })+'</div>';
+  }
+
   function renderPage(){
     KHA.setCrumb(page);
     document.getElementById("kha-back").disabled=!hist.length;
     var h="";
     switch(page){
       case "Dashboard":            h=pgDashboard();    break;
+      case "School assets":        h=pgAssets();       break;
       case "Books":                h=pgBooks();        break;
       case "Book categories":      h=pgBookCats();     break;
       case "Book issues":          h=pgBookIssues();   break;
@@ -72,6 +95,7 @@ KHA.init("property", function(session) {
     var routes    = KHA.load(KHA.STORE.routes,[]);
     var transport = KHA.load(KHA.STORE.transport,[]);
     var issues    = KHA.load(KHA.STORE.bookIssues,[]);
+    var assets    = KHA.load(KHA.STORE.propertyAssets,[]);
     var activeBuses = buses.filter(function(b){ return b.status==="Active"; }).length;
     var outBooks    = issues.filter(function(i){ return i.status==="Issued"; }).length;
 
@@ -86,6 +110,8 @@ KHA.init("property", function(session) {
     +KHA.statCard("🚗","Drivers",           drivers.length,  "Registered drivers")
     +KHA.statCard("🗺️","Routes",            routes.length,   "Active transport routes")
     +KHA.statCard("📍","Pupils on transport",transport.length,"Bus assignments")
+    +KHA.statCard("🪑","Furniture items",assets.reduce(function(sum,a){ return sum+(Number(a.quantity)||0); },0),
+      assets.reduce(function(sum,a){ return sum+(Number(a.repairCount)||0); },0)+" need repair")
     +'</div>'
 
     +'<div class="grid2">'
@@ -118,6 +144,7 @@ KHA.init("property", function(session) {
 
     +'<div class="cards">'
     +qCard("📖","Library books",    "Manage book inventory",          "Books")
+    +qCard("🪑","School assets",   "Track furniture and repairs",     "School assets")
     +qCard("🗂️","Book categories",  "Organise book categories",       "Book categories")
     +qCard("📤","Book issues",      "Track borrowed books",           "Book issues")
     +qCard("🚌","Buses",            "Register and manage buses",      "Buses")
@@ -430,6 +457,14 @@ KHA.init("property", function(session) {
           +fi("guardianPhone","Guardian phone","tel",rec.guardianPhone)
           +fi("status","Status","select",rec.status||"Assigned",1,["Assigned","Pending","Inactive"])
           +'</div>';
+      case "propertyAssets":
+        return '<div class="form-grid">'
+          +fi("assetType","Asset type","select",rec.assetType||"Desks",1,["Desks","Tables","Chairs"])
+          +fi("quantity","Total quantity","number",rec.quantity,1)
+          +fi("repairCount","Items needing repair","number",rec.repairCount||0,1)
+          +fi("location","Location","text",rec.location)
+          +fi("notes","Notes","textarea",rec.notes,0,[],"full")
+          +'</div>';
       default: return '<p>No form defined.</p>';
     }
   }
@@ -503,7 +538,8 @@ KHA.init("property", function(session) {
     var records=KHA.load(storeId,[]);
     var rec=id?records.find(function(r){ return r.id===id; }):null;
     var labels={books:"book",bookCats:"category",bookIssues:"book issue",
-                buses:"bus",drivers:"driver",routes:"route",transport:"transport assignment"};
+                buses:"bus",drivers:"driver",routes:"route",transport:"transport assignment",
+                propertyAssets:"school asset"};
     KHA.openModal(
       '<div class="modal-head"><h2>'+(rec?"Edit":"Add new")+" "+KHA.esc(labels[storeKey]||storeKey)+'</h2>'
       +'<button class="btn icon" onclick="KHA.closeModal()">✕</button></div>'
@@ -518,6 +554,14 @@ KHA.init("property", function(session) {
   async function saveRecord(storeKey,id){
     var form=document.getElementById("mForm");
     var fd=new FormData(form);
+    if(storeKey==="propertyAssets"){
+      var quantity=Number(fd.get("quantity"));
+      var repairCount=Number(fd.get("repairCount"));
+      if(!Number.isInteger(quantity)||quantity<0||!Number.isInteger(repairCount)||repairCount<0||repairCount>quantity){
+        KHA.toast("Enter valid quantities; items needing repair cannot exceed the total quantity.","error");
+        return;
+      }
+    }
     var storeId=KHA.STORE[storeKey]||storeKey;
     var records=KHA.load(storeId,[]);
     var rec={}; fd.forEach(function(v,k){ rec[k]=v; });

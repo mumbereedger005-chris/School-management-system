@@ -103,9 +103,9 @@ window.KHA = (function () {
         "People":            ["Students", "Teachers", "Staff profiles", "School team"],
         "Academics":         ["Classes", "Subjects", "Marks", "Report cards", "Examinations"],
         "Attendance":        ["Student attendance", "Daily enrollment", "Teacher attendance"],
-        "Timetables":        ["Class timetable", "Teacher timetable", "Subject timetable", "Examination timetable"],
-        "Finance":           ["Fees structure", "Invoices", "Payments", "Scholarships", "Financial reports"],
-        "Property":          ["Books", "Buses", "Drivers", "Routes", "Transport assignments"],
+        "Timetables":        ["Class timetable", "Examination timetable"],
+        "Finance":           ["Fees structure", "Payments", "Scholarships", "Financial reports"],
+        "Property":          ["School assets", "Books", "Buses", "Drivers", "Routes", "Transport assignments"],
         "Boarding":          ["Dormitories", "Beds", "Boarding assignments", "House masters"],
         "System":            ["User accounts", "Settings"]
       }
@@ -113,15 +113,15 @@ window.KHA = (function () {
 
     /**
      * Registrar – handles student admissions and enrollment records.
-     * Can register new pupils, upload photos, record parent contacts,
-     * assign classes, and manage student transfers.
+     * Can register new pupils, upload pupil and parent photos, record parent
+     * contacts, and assign classes and boarding status.
      */
     registrar: {
       label: "Registrar",
       title: "Admissions Registrar",
       color: "#168560",
       groups: {
-        "Admissions & Records": ["Dashboard", "Students", "Student transfers", "Admissions report", "School team", "Messages", "Parent updates"]
+        "Admissions & Records": ["Dashboard", "Students", "Admissions report", "School team", "Messages", "Parent updates"]
       }
     },
 
@@ -145,7 +145,7 @@ window.KHA = (function () {
 
     /**
      * Accountant – manages all financial transactions.
-     * Creates fees structures, raises invoices, records payments,
+     * Creates fees structures, assesses term charges, records payments,
      * issues receipts, and generates financial reports.
      */
     accountant: {
@@ -153,7 +153,7 @@ window.KHA = (function () {
       title: "School Accountant",
       color: "#b45309",
       groups: {
-        "Finance management": ["Dashboard", "Fees structure", "Invoices", "Payments", "Scholarships", "School team", "Payment requests", "Payment settings", "Messages", "Parent updates"],
+        "Finance management": ["Dashboard", "Fees structure", "Payments", "Scholarships", "School team", "Payment requests", "Payment settings", "Messages", "Parent updates"],
         "Reports":            ["Financial reports", "Payment receipts"]
       }
     },
@@ -169,7 +169,7 @@ window.KHA = (function () {
       color: "#0369a1",
       groups: {
         "Library":   ["Dashboard", "Books", "Book categories", "Book issues", "School team"],
-        "Transport": ["Buses", "Drivers", "Routes", "Transport assignments", "Messages", "Parent updates"]
+        "Transport": ["School assets", "Buses", "Drivers", "Routes", "Transport assignments", "Messages", "Parent updates"]
       }
     },
 
@@ -213,7 +213,6 @@ window.KHA = (function () {
     "School calendar":       "🗓️",
     "Parent updates":        "📬",
     "Students":               "🎓",
-    "Student transfers":      "🔄",
     "Admissions report":      "📊",
     "Teachers":               "👩‍🏫",
     "Staff profiles":         "👥",
@@ -228,11 +227,9 @@ window.KHA = (function () {
     "Daily enrollment":       "🧾",
     "Teacher attendance":     "📋",
     "Class timetable":        "📅",
-    "Teacher timetable":      "📅",
-    "Subject timetable":      "📅",
     "Examination timetable":  "📅",
+    "School assets":          "🪑",
     "Fees structure":         "💰",
-    "Invoices":               "🧾",
     "Payments":               "💵",
     "Scholarships":           "🏅",
     "Financial reports":      "📊",
@@ -267,6 +264,7 @@ window.KHA = (function () {
     classes:       "kha_classes",        // Class / stream definitions
     subjects:      "kha_subjects",       // Curriculum subjects
     marks:         "kha_marks",          // Assessment marks per pupil per subject
+    reportCards:   "kha_report_cards",   // Report cards prepared by the DOS
     attendance:    "kha_attendance",     // Daily student attendance
     enrollment:    "kha_enrollment",     // Daily student enrollment register
     teacherAtt:    "kha_teacher_att",    // Teacher check-in records
@@ -277,6 +275,7 @@ window.KHA = (function () {
     payments:      "kha_payments",       // Fee payment records
     scholarships:  "kha_scholarships",   // Discounts, bursaries, scholarships
     books:         "kha_books",          // Library book inventory
+    propertyAssets:"kha_property_assets",// Furniture and school asset inventory
     bookCats:      "kha_book_cats",      // Book category definitions
     bookIssues:    "kha_book_issues",    // Book lending / return records
     buses:         "kha_buses",          // School bus register
@@ -531,18 +530,20 @@ window.KHA = (function () {
         classes:["dos","Classes"],
         subjects:["dos","Subjects"],
         marks:["dos","Assessment marks"],
+        reportCards:["dos","Report cards"],
         attendance:["dos","Student attendance"],
         enrollment:["dos","Daily enrollment"],
         teacherAtt:["dos","Teacher attendance"],
         timetable:["dos","Timetables"],
         exams:["dos","Examinations"],
         fees:["accountant","Fees structures"],
-        invoices:["accountant","Invoices"],
+        invoices:["accountant","Fee charges"],
         payments:["accountant","Payments"],
         paymentRequests:["accountant","Parent payment requests"],
         paymentSettings:["accountant","Payment instructions"],
         scholarships:["accountant","Scholarships"],
         books:["property","Library books"],
+        propertyAssets:["property","School assets"],
         bookCats:["property","Book categories"],
         bookIssues:["property","Book issues"],
         buses:["property","Buses"],
@@ -1084,12 +1085,30 @@ tbody tr:last-child td { border: 0; }
 /* ── PRINT STYLES ─────────────────────────────────────────────────────── */
 @media print {
   body { background: #fff; }
+  body::before {
+    content: url("star%20logo.png");
+    position: fixed;
+    z-index: 2;
+    top: 50%;
+    left: 50%;
+    width: auto;
+    height: 72vh;
+    max-width: 80vw;
+    object-fit: contain;
+    transform: translate(-50%, -50%);
+    opacity: .07;
+    pointer-events: none;
+  }
+  #root, .main { position: relative; z-index: 1; }
+  .print-only { display: block !important; }
   /* Hide navigation and non-essential UI when printing */
   .sidebar, .topbar, .page-head, .no-print, .toast, .modal-backdrop { display: none !important; }
   .main            { margin: 0 !important; }
   .content         { max-width: none; padding: 0; }
   .table-wrap, .panel { box-shadow: none; border: 0; }
   .table-scroll    { overflow: visible; }
+  .pupil-register-table .table-scroll th:last-child,
+  .pupil-register-table .table-scroll td:last-child { display: none; }
   table            { white-space: normal; }
   th, td           { font-size: 9px; }
 }
@@ -1705,7 +1724,7 @@ tbody tr:last-child td { border: 0; }
    */
   function statCard(icon, label, value, detail, accent = false) {
     return '<article class="stat' + (accent ? " accent" : "") + '">'
-      + '<div class="stat-ico" aria-hidden="true">' + icon + '</div>'
+      + (icon ? '<div class="stat-ico" aria-hidden="true">' + icon + '</div>' : '')
       + '<span class="stat-label">' + esc(label) + '</span>'
       + '<strong>' + esc(value) + '</strong>'
       + '<small>' + esc(detail) + '</small>'

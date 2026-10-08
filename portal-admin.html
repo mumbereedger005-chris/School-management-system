@@ -6,9 +6,76 @@
   <title>Admin Portal — Five Star Model School</title>
   <script src="shared.js"></script>
   <script src="staff-team.js"></script>
+  <style>
+    .admin-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .admin-summary-grid > .stat {
+      grid-column: span 2;
+      min-height: 128px;
+      box-sizing: border-box;
+    }
+    .admin-summary-grid .stat-ico,
+    .admin-furniture .stat-ico {
+      display: none;
+    }
+    .admin-summary-grid > .stat:nth-child(n+4):nth-child(-n+13) {
+      grid-column: span 3;
+    }
+    .admin-vehicle-cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      grid-column: 1 / -1;
+    }
+    .admin-vehicle-cards > .stat {
+      min-height: 128px;
+      box-sizing: border-box;
+    }
+    @media (max-width: 760px) {
+      .admin-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .admin-summary-grid > .stat,
+      .admin-summary-grid > .stat:nth-child(n+4):nth-child(-n+13) {
+        grid-column: span 1;
+      }
+    }
+    @media (max-width: 480px) {
+      .admin-summary-grid {
+        grid-template-columns: 1fr;
+      }
+      .admin-summary-grid > .stat,
+      .admin-summary-grid > .stat:nth-child(n+4):nth-child(-n+13) {
+        grid-column: 1;
+      }
+      .admin-vehicle-cards { grid-template-columns: 1fr; }
+    }
+    #admin-print-area { display: none; }
+    @media print {
+      body.admin-printing #root,
+      body.admin-printing #root * { visibility: hidden !important; }
+      body.admin-printing #admin-print-area,
+      body.admin-printing #admin-print-area * { visibility: visible !important; }
+      body.admin-printing #admin-print-area {
+        display: block !important;
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        padding: 20px;
+        background: #fff;
+        color: #111;
+        box-sizing: border-box;
+      }
+    }
+  </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="admin-print-area" aria-hidden="true"></div>
 <script>
 "use strict";
 KHA.init("admin", function(session) {
@@ -47,6 +114,10 @@ KHA.init("admin", function(session) {
       extraRight: '<a href="index.html" class="btn secondary small no-print">All portals</a>'
     });
     document.getElementById("kha-back").addEventListener("click", goBack);
+    window.addEventListener("afterprint", function(){
+      document.body.classList.remove("admin-printing");
+      document.getElementById("admin-print-area").innerHTML = "";
+    });
     renderPage();
   }
 
@@ -81,15 +152,13 @@ KHA.init("admin", function(session) {
       case "Daily enrollment":   html = pageDailyEnrollment(); break;
       case "Teacher attendance": html = pageTeacherAttendance(); break;
       case "Class timetable":    html = pageTimetable("class"); break;
-      case "Teacher timetable":  html = pageTimetable("teacher"); break;
-      case "Subject timetable":  html = pageTimetable("subject"); break;
       case "Examination timetable": html = pageTimetable("exam"); break;
       case "Fees structure":     html = pageFeesStructure(); break;
-      case "Invoices":           html = pageInvoices(); break;
       case "Payments":           html = pagePayments(); break;
       case "Scholarships":       html = pageScholarships(); break;
       case "Financial reports":  html = pageFinancialReports(); break;
       case "Books":              html = pageBooks(); break;
+      case "School assets":      html = pageSchoolAssets(); break;
       case "Buses":              html = pageBuses(); break;
       case "Drivers":            html = pageDrivers(); break;
       case "Routes":             html = pageRoutes(); break;
@@ -112,16 +181,16 @@ KHA.init("admin", function(session) {
   function pageDashboard() {
     var S  = KHA.STORE;
     var students   = KHA.load(S.students, []);
-    var teachers   = KHA.load(S.teachers, []);
     var activities = KHA.load(S.departmentActivity, []);
     var classes    = KHA.load(S.classes, []);
     var payments   = KHA.load(S.payments, []);
     var invoices   = KHA.load(S.invoices, []);
     var attendance = KHA.load(S.attendance, []);
     var buses      = KHA.load(S.buses, []);
+    var teacherAttendance = KHA.load(S.teacherAtt, []);
     var boarding   = KHA.load(S.boarding, []);
     var beds       = KHA.load(S.beds, []);
-    var announcements = KHA.load(S.announcements, []);
+    var assets     = KHA.load(S.propertyAssets, []);
 
     var activeStudents = students.filter(function(s){ return s.status === "Active"; }).length;
     var maleCount   = students.filter(function(s){ return s.gender === "Male"; }).length;
@@ -132,9 +201,38 @@ KHA.init("admin", function(session) {
     var todayAtt    = attendance.filter(function(a){ return a.date === KHA.today(); });
     var presentToday= todayAtt.filter(function(a){ return a.status === "Present"; }).length;
     var absentToday = todayAtt.filter(function(a){ return a.status === "Absent"; }).length;
+    var todayTeacherAtt = teacherAttendance.filter(function(a){ return a.date === KHA.today(); });
+    var presentTeachers = todayTeacherAtt.filter(function(a){ return a.status === "Present"; }).length;
+    var absentTeachers = todayTeacherAtt.filter(function(a){ return a.status === "Absent"; });
     var activeBuses = buses.filter(function(b){ return b.status === "Active"; }).length;
-    var occupiedBeds= boarding.filter(function(b){ return b.status === "Assigned"; }).length;
-    var availBeds   = beds.length - occupiedBeds;
+    var assignedBoarding = boarding.filter(function(b){ return b.status === "Assigned"; });
+    var boarderKeys = {}, occupiedBedKeys = {};
+    assignedBoarding.forEach(function(b){
+      boarderKeys[b.admission||b.name||b.id] = true;
+      occupiedBedKeys[(b.dormitory||"")+"|"+(b.bed||b.bedNumber||b.id)] = true;
+    });
+    var boarders = students.filter(function(s){
+      var studentKey = s.admission||s.name||s.id;
+      return s.status === "Active" && (s.residency === "Boarding" || boarderKeys[studentKey]);
+    }).length;
+    var occupiedBeds = Math.min(beds.length,Math.max(
+      Object.keys(occupiedBedKeys).length,
+      beds.filter(function(b){ return b.status==="Occupied"; }).length
+    ));
+    var repairBeds  = beds.filter(function(b){ return b.status === "Maintenance" || b.needsRepair === true; }).length;
+    var availBeds   = Math.max(0, beds.length - occupiedBeds - repairBeds);
+    var nonBoarders = Math.max(0, activeStudents - boarders);
+    var busesDueService = buses.filter(function(b){
+      return b.status === "Maintenance" || (b.nextService && b.nextService <= KHA.today());
+    }).length;
+    var assetCounts = ["Desks","Tables","Chairs"].map(function(type){
+      var typeRecords = assets.filter(function(a){ return String(a.assetType||"").toLowerCase() === type.toLowerCase(); });
+      return {
+        type: type,
+        total: typeRecords.reduce(function(sum,a){ return sum + (Number(a.quantity)||0); }, 0),
+        repair: typeRecords.reduce(function(sum,a){ return sum + (Number(a.repairCount)||0); }, 0)
+      };
+    });
 
     var hour = new Date().getHours();
     var greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -154,58 +252,80 @@ KHA.init("admin", function(session) {
     /* recent activity */
     var allRecent = [];
     var collections = [
-      [S.students,"🎓","Student"],
-      [S.teachers,"👩‍🏫","Teacher"],
-      [S.payments,"💵","Payment"],
-      [S.boarding,"🛏️","Boarding"],
-      [S.buses,"🚌","Bus"]
+      [S.students,"Student"],
+      [S.teachers,"Teacher"],
+      [S.payments,"Payment"],
+      [S.boarding,"Boarding"],
+      [S.buses,"Bus"]
     ];
     collections.forEach(function(c){
       KHA.load(c[0],[]).forEach(function(r){
-        allRecent.push({label: r.name||r.title||r.admission||r.registration||"Record", type:c[2], icon:c[1], at:r.createdAt||""});
+        allRecent.push({label: r.name||r.title||r.admission||r.registration||"Record", type:c[1], at:r.createdAt||""});
       });
     });
     allRecent.sort(function(a,b){ return b.at.localeCompare(a.at); });
     var recentHTML = allRecent.slice(0,8).map(function(r){
-      return '<div class="activity"><span class="act-ico">'+r.icon+'</span>'
+      return '<div class="activity">'
         +'<div><p><strong>'+KHA.esc(r.label)+'</strong> added to '+KHA.esc(r.type)+'</p>'
         +'<time>'+KHA.fmtDate(r.at)+'</time></div></div>';
     }).join("") || '<div class="empty"><strong>No activity yet</strong>Records added across portals will appear here.</div>';
     var trackedRecent = activities.slice().reverse().slice(0,8);
     if (trackedRecent.length) {
       recentHTML = trackedRecent.map(function(event) {
-        return '<div class="activity"><span class="act-ico">🕵️</span>'
+        return '<div class="activity">'
           +'<div><p><strong>'+KHA.esc(event.actorName)+'</strong> '+KHA.esc(event.action.toLowerCase())+' '+KHA.esc(event.area)+': '+KHA.esc(event.recordName)+'</p>'
           +'<time>'+KHA.esc(event.departmentName)+' · '+KHA.esc(activityTimestamp(event.at))+'</time></div></div>';
       }).join("");
     }
 
-    /* latest announcement */
-    var latestAnn = announcements.slice(-1)[0];
-
-    return KHA.pageHead(greeting+", "+KHA.esc(session.name.split(" ")[0])+" 👋",
+    return KHA.pageHead(greeting+", "+KHA.esc(session.name.split(" ")[0]),
       "Complete school overview — "+KHA.CURRENT_YEAR,
-      '<button class="btn secondary small" data-nav-page="Department activity">🕵️ Department activity</button>'
-      +'<button class="btn small" data-action="newAnnouncement">📢 Post announcement</button>')
+      '<button class="btn secondary small" data-nav-page="Department activity">Department activity</button>'
+      +'<button class="btn small" data-action="newAnnouncement">Post announcement</button>')
 
-    + (latestAnn ? '<div class="notice info" style="margin-bottom:16px">📢 <strong>'+KHA.esc(latestAnn.title)+'</strong> — '+KHA.esc(latestAnn.body)+'</div>' : "")
-
-    + '<div class="stats">'
-    + KHA.statCard("🎓","Total pupils", activeStudents, maleCount+"M · "+femaleCount+"F", true)
-    + KHA.statCard("👩‍🏫","Teachers", teachers.length, "Registered staff")
-    + KHA.statCard("🕵️","Department changes", activities.length, "Tracked from portal updates")
-    + KHA.statCard("🏫","Classes", classes.length, "Class groups / streams")
-    + KHA.statCard("💵","Fees collected", KHA.fmtMoney(collected), "Total payments received")
-    + KHA.statCard("⚠️","Outstanding", KHA.fmtMoney(outstanding), "Invoiced less collected")
-    + KHA.statCard("📋","Today present", presentToday, absentToday+" absent today")
-    + KHA.statCard("🚌","Active buses", activeBuses, buses.length+" total vehicles")
-    + KHA.statCard("🛏️","Beds available", availBeds, occupiedBeds+" occupied")
+    + '<div class="admin-summary-grid">'
+    + KHA.statCard("","Total pupils", activeStudents, maleCount+"M · "+femaleCount+"F", true)
+    + KHA.statCard("","Fees collected", KHA.fmtMoney(collected), "Total payments received")
+    + KHA.statCard("","Outstanding", KHA.fmtMoney(outstanding), "Billed fees less payments")
+    + KHA.statCard("","Boarding pupils", boarders, "Assigned to boarding")
+    + KHA.statCard("","Day scholars", nonBoarders, "Not in boarding")
+    + KHA.statCard("","Teachers present", presentTeachers, "Today")
+    + KHA.statCard("","Teachers absent", absentTeachers.length, "Today")
+    + KHA.statCard("","Pupils present", presentToday, "Today")
+    + KHA.statCard("","Pupils absent", absentToday, "Today")
+    + KHA.statCard("","Beds available", availBeds, repairBeds+" need repair")
+    + KHA.statCard("","Beds occupied", occupiedBeds, "Currently assigned")
+    + KHA.statCard("","Classes", classes.length, "Class groups / streams")
+    + '<div class="admin-vehicle-cards">'
+    + KHA.statCard("","Vehicles", buses.length, activeBuses+" active")
+    + KHA.statCard("","Vehicles needing service", busesDueService, "Due or in maintenance")
+    + '</div>'
+    + KHA.statCard("","Department changes", activities.length, "Tracked from portal updates")
     + '</div>'
 
     + '<div class="grid2">'
     + '<section class="panel"><div class="panel-head"><h2>Pupils by class</h2></div><div class="bars">'+classBars+'</div></section>'
-    + '<section class="panel"><div class="panel-head"><h2>Recent activity</h2></div><div class="activities">'+recentHTML+'</div></section>'
+    + '<section class="panel"><div class="panel-head"><h2>Teacher attendance today</h2></div>'
+    + (todayTeacherAtt.length
+      ? '<div class="table-wrap">'+KHA.buildTable([
+          {key:"name",label:"Teacher"},
+          {key:"status",label:"Status",render:statusBadge},
+          {key:"reason",label:"Reason",render:function(r){
+            return r.status==="Absent" ? KHA.esc(r.reason||r.absenceReason||r.notes||"Not provided") : "—";
+          }}
+        ], todayTeacherAtt, null)+'</div>'
+      : '<div class="panel-body"><p>No teacher attendance has been recorded today.</p></div>')
+    + '</section>'
     + '</div>'
+
+    + '<section class="panel admin-furniture" style="margin-bottom:14px"><div class="panel-head"><h2>Furniture condition</h2></div><div class="stats">'
+    + assetCounts.map(function(a){
+        return KHA.statCard("",a.type,a.total,a.repair+" need repair");
+      }).join("")
+    + KHA.statCard("","Beds needing repair",repairBeds,beds.length+" registered")
+    + '</div></section>'
+
+    + '<section class="panel"><div class="panel-head"><h2>Recent activity</h2></div><div class="activities">'+recentHTML+'</div></section>'
 
     /* KPI bars */
     + '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Key performance indicators</h2><small>School-wide metrics</small></div>'
@@ -219,11 +339,11 @@ KHA.init("admin", function(session) {
     /* portal cards */
     + '<section class="panel"><div class="panel-head"><h2>All portals</h2><small>Quick access to every department</small></div><div class="panel-body">'
     + '<div class="cards">'
-    + portalCard("Registrar","📋","Students & admissions","portal-registrar.html","#168560","registrar")
-    + portalCard("Director of Studies","📚","Academics & timetables","portal-dos.html","#7c3aed","dos")
-    + portalCard("Accountant","💰","Finance & payments","portal-accountant.html","#b45309","accountant")
-    + portalCard("Property Officer","🚌","Transport & library","portal-property.html","#0369a1","property")
-    + portalCard("Boarding Officer","🛏️","Hostels & dormitories","portal-boarding.html","#be185d","boarding")
+    + portalCard("Registrar","Students & admissions","portal-registrar.html","#168560","registrar")
+    + portalCard("Director of Studies","Academics & timetables","portal-dos.html","#7c3aed","dos")
+    + portalCard("Accountant","Finance & payments","portal-accountant.html","#b45309","accountant")
+    + portalCard("Property Officer","Transport & library","portal-property.html","#0369a1","property")
+    + portalCard("Boarding Officer","Hostels & dormitories","portal-boarding.html","#be185d","boarding")
     + '</div></div></section>';
   }
 
@@ -235,10 +355,9 @@ KHA.init("admin", function(session) {
       +'<strong>'+pct+'%</strong></div>';
   }
 
-  function portalCard(name, icon, desc, file, color, roleKey) {
+  function portalCard(name, desc, file, color, roleKey) {
     var count = KHA.load(KHA.STORE.accounts,[]).filter(function(a){ return a.role===roleKey; }).length;
     return '<div class="module-card">'
-      +'<div class="mc-icon">'+icon+'</div>'
       +'<h3>'+KHA.esc(name)+'</h3>'
       +'<p>'+KHA.esc(desc)+' · '+count+' account(s)</p>'
       +'<a href="'+file+'" class="btn small" style="background:'+color+'">Open portal →</a>'
@@ -258,7 +377,7 @@ KHA.init("admin", function(session) {
       {department:"dos",name:"Director of Studies",store:KHA.STORE.timetable,area:"Timetables"},
       {department:"dos",name:"Director of Studies",store:KHA.STORE.exams,area:"Examinations"},
       {department:"accountant",name:"Accountant",store:KHA.STORE.fees,area:"Fees structures"},
-      {department:"accountant",name:"Accountant",store:KHA.STORE.invoices,area:"Invoices"},
+      {department:"accountant",name:"Accountant",store:KHA.STORE.fees,area:"Fee schedules"},
       {department:"accountant",name:"Accountant",store:KHA.STORE.payments,area:"Payments"},
       {department:"accountant",name:"Accountant",store:KHA.STORE.paymentRequests,area:"Parent payment requests"},
       {department:"accountant",name:"Accountant",store:KHA.STORE.scholarships,area:"Scholarships"},
@@ -332,7 +451,7 @@ KHA.init("admin", function(session) {
       + '<div class="field" style="margin:0"><label>Department</label><select name="department"><option value="all">All departments</option>'
       + departments.map(function(department) { return '<option value="'+department[0]+'"'+(activityDepartment===department[0]?" selected":"")+'>'+department[1]+'</option>'; }).join("")
       + '</select></div><div class="field" style="margin:0;flex:1"><label>Search records or activity</label><input name="search" value="'+KHA.esc(activitySearch)+'" placeholder="Name, class, record, or staff member"></div>'
-      + '<button class="btn" type="submit">Apply filters</button><button class="btn secondary" type="button" data-clear-activity-filters>Clear</button></form>';
+      + '<button class="btn" type="submit">Search</button><button class="btn secondary" type="button" data-clear-activity-filters>Clear</button></form>';
 
     html += '<section class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>All current department records</h2><small>'+rows.length+' record(s)</small></div>'
       + (rows.length ? '<div class="table-wrap">'+KHA.buildTable([
@@ -423,15 +542,16 @@ KHA.init("admin", function(session) {
      STUDENTS (admin read-only overview)
   ══════════════════════════════════════════════════════════════════ */
   function pageStudents() {
-    var rows = KHA.load(KHA.STORE.students, []).filter(function(s){
+    var allStudents = KHA.load(KHA.STORE.students, []);
+    var rows = allStudents.filter(function(s){
       var q = searchQ.toLowerCase();
-      return !q || s.name.toLowerCase().includes(q) || (s.admission||"").toLowerCase().includes(q);
+      return !q || String(s.name||"").toLowerCase().includes(q) || (s.admission||"").toLowerCase().includes(q);
     });
     if (filterClass) rows = rows.filter(function(s){ return s.class === filterClass; });
     if (filterStatus) rows = rows.filter(function(s){ return s.status === filterStatus; });
 
     var html = KHA.pageHead("Students","All registered pupils — read-only admin view.",
-      '<button class="btn secondary small" data-action="exportStudents">⬇ Export CSV</button>');
+      '<button class="btn secondary small no-print" data-action="printStudents">🖨️ Print all pupils</button>');
     html += searchBar("students", filterClass, filterStatus);
     html += '<div class="table-wrap">'
       + KHA.buildTable(
@@ -442,11 +562,32 @@ KHA.init("admin", function(session) {
             return '<div class="person"><div><strong>'+KHA.esc(r.name)+'</strong><small>'+KHA.esc(r.admission)+'</small></div></div>';
           }},
           {key:"class",label:"Class",render:function(r){ return KHA.esc(r.class)+" "+KHA.esc(r.stream||""); }},
-          {key:"guardian",label:"Guardian",render:function(r){ return KHA.esc(r.guardian)+'<br><small style="color:var(--muted)">'+KHA.esc(r.guardianPhone||r.phone||"")+'</small>'; }},
+          {key:"guardian",label:"Guardian contact",render:function(r){
+            var phone = r.guardianPhone||r.phone||"";
+            var email = r.guardianEmail||"";
+            return '<strong>'+KHA.esc(r.guardian||"—")+'</strong>'
+              +(phone?'<br><a href="tel:'+KHA.esc(phone)+'">'+KHA.esc(phone)+'</a>'
+                +' · <a href="sms:'+KHA.esc(phone)+'">Text</a>':"")
+              +(email?'<br><a href="mailto:'+KHA.esc(email)+'">'+KHA.esc(email)+'</a>':"");
+          }},
           {key:"status",label:"Status",render:statusBadge}],
           rows, null)
       + '</div>';
     return html;
+  }
+
+  function printAdminTable(title, columns, records) {
+    var area = document.getElementById("admin-print-area");
+    area.innerHTML = '<h1>'+KHA.esc(KHA.SCHOOL_NAME)+' — '+KHA.esc(title)+'</h1>'
+      +'<p>Printed '+KHA.esc(KHA.today())+' · '+records.length+' record(s)</p>'
+      +'<table><thead><tr>'+columns.map(function(column){ return '<th>'+KHA.esc(column.label)+'</th>'; }).join("")
+      +'</tr></thead><tbody>'+records.map(function(record){
+        return '<tr>'+columns.map(function(column){
+          return '<td>'+KHA.esc(record[column.key]||"")+'</td>';
+        }).join("")+'</tr>';
+      }).join("")+'</tbody></table>';
+    document.body.classList.add("admin-printing");
+    window.print();
   }
 
   /* ══════════════════════════════════════════════════════════════════
@@ -458,7 +599,7 @@ KHA.init("admin", function(session) {
       return !q || t.name.toLowerCase().includes(q) || (t.staffId||"").toLowerCase().includes(q) || (t.role||"").toLowerCase().includes(q);
     });
     var html = KHA.pageHead("Teachers","All registered staff and teaching roles.",
-      '<button class="btn small" data-action="addTeacher">+ Add staff</button>');
+      '<button class="btn secondary small no-print" data-action="printTeachers">🖨️ Print teachers</button>');
     html += '<div class="table-wrap">'
       + KHA.buildTable(
           [{key:"photo",label:"",render:function(r){
@@ -473,12 +614,7 @@ KHA.init("admin", function(session) {
           {key:"phone",label:"Contact"},
           {key:"qualification",label:"Qualification"},
           {key:"status",label:"Status",render:statusBadge}],
-          rows,
-          function(r){
-            return '<button class="btn icon" data-edit-teacher="'+KHA.esc(r.id)+'" title="Edit">✏️</button>'
-              +'<button class="btn icon" data-view-teacher="'+KHA.esc(r.id)+'" title="View profile">👤</button>'
-              +'<button class="btn icon danger" data-del-teacher="'+KHA.esc(r.id)+'" title="Delete">🗑️</button>';
-          })
+          rows, null)
       + '</div>';
     return html;
   }
@@ -493,10 +629,10 @@ KHA.init("admin", function(session) {
       .concat(houseMasters.map(function(h){ return Object.assign({}, h, {staffType:"houseMaster", dept:"Boarding", role: h.role || "House master / Matron"}); }));
 
     var html = KHA.pageHead("Staff profiles","Staff directory with photos, roles, departments, and contact details.",
-      '<button class="btn small" data-action="addTeacher">+ Add staff</button>');
+      '<button class="btn secondary small no-print" data-action="printAllStaff">🖨️ Print staff list</button>');
 
     if (!allStaff.length) {
-      return html + '<div class="notice info">No staff registered yet. Use Add staff to create the first staff profile.</div>';
+      return html + '<div class="notice info">No staff registered yet.</div>';
     }
 
     html += '<div class="table-wrap">'+KHA.buildTable([
@@ -512,9 +648,7 @@ KHA.init("admin", function(session) {
       {key:"status",label:"Status",render:statusBadge}
     ],allStaff,function(s){
       var kind=s.staffType==="houseMaster"?"house-master":"teacher";
-      return '<button class="btn icon" data-view-staff="'+kind+'" data-id="'+KHA.esc(s.id)+'" title="View profile">👤</button>'
-        +'<button class="btn icon" data-edit-staff="'+kind+'" data-id="'+KHA.esc(s.id)+'" title="Edit profile">✏️</button>'
-        +'<button class="btn icon danger" data-del-staff="'+kind+'" data-id="'+KHA.esc(s.id)+'" title="Delete profile">🗑️</button>';
+      return '<button class="btn icon" data-view-staff="'+kind+'" data-id="'+KHA.esc(s.id)+'" title="View profile">👤</button>';
     })+'</div>';
     return html;
   }
@@ -563,15 +697,6 @@ KHA.init("admin", function(session) {
       {key:"term",label:"Term"},{key:"tuition",label:"Tuition",render:function(r){ return KHA.fmtMoney(r.tuition); }},
       {key:"total",label:"Total",render:function(r){ return KHA.fmtMoney(r.total||r.tuition); }}
     ], feesForm);
-  }
-  function pageInvoices() {
-    return genericPage("Invoices","Student fee invoices",KHA.STORE.invoices,"invoice",[
-      {key:"name",label:"Pupil"},{key:"admission",label:"Adm. #"},
-      {key:"class",label:"Class"},{key:"term",label:"Term"},
-      {key:"amount",label:"Amount",render:function(r){ return KHA.fmtMoney(r.amount); }},
-      {key:"due",label:"Due",render:function(r){ return KHA.fmtDate(r.due); }},
-      {key:"status",label:"Status",render:statusBadge}
-    ], invoiceForm);
   }
   function pagePayments() {
     return genericPage("Payments","Recorded fee payments",KHA.STORE.payments,"payment",[
@@ -660,17 +785,28 @@ KHA.init("admin", function(session) {
   function pageStudentAttendance() {
     return genericPage("Student attendance","Daily attendance records",KHA.STORE.attendance,"record",[
       {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
-      {key:"name",label:"Pupil"},{key:"admission",label:"Adm. #"},
+      {key:"pupil",label:"Pupil",render:function(r){ return KHA.esc(r.pupilName||r.name||""); }},
+      {key:"admission",label:"Adm. #"},
       {key:"class",label:"Class"},
-      {key:"status",label:"Status",render:statusBadge}
+      {key:"status",label:"Status",render:statusBadge},
+      {key:"reason",label:"Reason",render:function(r){ return KHA.esc(r.reason||r.absenceReason||""); }}
     ], attendanceForm);
+  }
+
+  function pageSchoolAssets() {
+    return genericPage("School assets","Furniture inventory and repair status",KHA.STORE.propertyAssets,"asset",[
+      {key:"assetType",label:"Asset"},
+      {key:"quantity",label:"Quantity"},
+      {key:"repairCount",label:"Needs repair"},
+      {key:"location",label:"Location"},
+      {key:"notes",label:"Notes"}
+    ], null);
   }
 
   function pageDailyEnrollment() {
     var rows = KHA.load(KHA.STORE.enrollment, []).slice().reverse();
     var html = KHA.pageHead("Daily enrollment","Daily school enrollment figures recorded by the DOS.",
-      '<input class="search" placeholder="Search date or class…" id="gSearch" value="'+KHA.esc(searchQ)+'">'
-      +'<button class="btn small" data-action="addRecord" data-store="'+KHA.esc(KHA.STORE.enrollment)+'" data-noun="daily enrollment record">+ Record enrollment</button>');
+      '<input class="search" placeholder="Search date or class…" id="gSearch" value="'+KHA.esc(searchQ)+'">');
 
     var todayRows = rows.filter(function(r){ return r.date === KHA.today(); });
     var totalToday = todayRows.reduce(function(sum, r){ return sum + (Number(r.total)||0); }, 0);
@@ -690,26 +826,9 @@ KHA.init("admin", function(session) {
           {key:"absent",label:"Absent"},
           {key:"newAdmissions",label:"New admissions"},
           {key:"notes",label:"Notes"}
-        ], rows, function(r){
-          return '<button class="btn icon" data-edit="'+KHA.esc(r.id)+'" data-store="'+KHA.esc(KHA.STORE.enrollment)+'" title="Edit">✏️</button>'
-            +'<button class="btn icon danger" data-del="'+KHA.esc(r.id)+'" data-store="'+KHA.esc(KHA.STORE.enrollment)+'" title="Delete">🗑️</button>';
-        })
+        ], rows, null)
       + '</div>';
 
-    window.__currentFormFn = function(rec) {
-      rec = rec || {};
-      return '<div class="form-grid">'
-        + f("date","Date","date",rec.date||KHA.today(),1)
-        + f("class","Class","select",rec.class,1,KHA.CLASS_LIST)
-        + f("total","Total enrolled","number",rec.total||0,1)
-        + f("present","Present today","number",rec.present||0,1)
-        + f("absent","Absent today","number",rec.absent||0,1)
-        + f("newAdmissions","New admissions","number",rec.newAdmissions||0)
-        + f("notes","Notes / remarks","textarea",rec.notes,0,"")
-        + '</div>';
-    };
-    window.__currentStoreKey = KHA.STORE.enrollment;
-    window.__currentNoun = "daily enrollment record";
     return html;
   }
 
@@ -718,16 +837,36 @@ KHA.init("admin", function(session) {
       {key:"date",label:"Date",render:function(r){ return KHA.fmtDate(r.date); }},
       {key:"name",label:"Teacher"},{key:"staffId",label:"Staff ID"},
       {key:"checkIn",label:"Check-in"},
-      {key:"status",label:"Status",render:statusBadge}
+      {key:"status",label:"Status",render:statusBadge},
+      {key:"reason",label:"Reason",render:function(r){ return KHA.esc(r.reason||r.absenceReason||""); }}
     ], teacherAttForm);
   }
 
   function pageTimetable(type) {
-    var rows = KHA.load(KHA.STORE.timetable, []).filter(function(r){ return r.type===type; });
-    var title = type.charAt(0).toUpperCase()+type.slice(1)+" timetable";
-    var html = KHA.pageHead(title, "View timetable schedule.",
-      '<button class="btn small" data-action="addTT" data-tt-type="'+KHA.esc(type)+'">+ Add slot</button>'
-      +'<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print</button>');
+    if (type === "exam") {
+      var exams = KHA.load(KHA.STORE.timetable, []).filter(function(record){
+        return String(record.ttType||record.type||"").toLowerCase()==="exam";
+      }).sort(function(a,b){
+        return String(a.day||"").localeCompare(String(b.day||""))
+          || String(a.period||"").localeCompare(String(b.period||""));
+      });
+      return KHA.pageHead("Examination timetable","Mid-term and end-of-term examination schedule.",
+        '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print timetable</button>')
+        + '<div class="table-wrap">'+KHA.buildTable([
+            {key:"examType",label:"Examination"},
+            {key:"class",label:"Class"},
+            {key:"subject",label:"Subject"},
+            {key:"day",label:"Day"},
+            {key:"period",label:"Period"},
+            {key:"teacher",label:"Teacher"},
+            {key:"room",label:"Room"},
+          ],exams,null)+'</div>';
+    }
+    var rows = KHA.load(KHA.STORE.timetable, []).filter(function(r){
+      return (r.type||r.ttType||"").toLowerCase()===type;
+    });
+    var html = KHA.pageHead("Class timetable", "View timetable schedule.",
+      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print</button>');
     html += buildTimetableGrid(rows, type);
     return html;
   }
@@ -742,9 +881,9 @@ KHA.init("admin", function(session) {
     var outstanding = Math.max(0, invoiced - collected);
 
     var html = KHA.pageHead("Financial reports","School financial summary.",
-      '<button class="btn secondary small no-print" onclick="window.print()">🖨️ Print report</button>');
+      '');
     html += '<div class="stats">'
-      + KHA.statCard("💵","Total invoiced",KHA.fmtMoney(invoiced),invoices.length+" invoices")
+      + KHA.statCard("💵","Fees assessed",KHA.fmtMoney(invoiced),invoices.length+" fee records")
       + KHA.statCard("✅","Collected",KHA.fmtMoney(collected),payments.length+" payments")
       + KHA.statCard("⚠️","Outstanding",KHA.fmtMoney(outstanding),"Unpaid balance")
       + KHA.statCard("🏅","Discounts given",KHA.fmtMoney(discounts),schols.length+" scholarships")
@@ -788,21 +927,23 @@ KHA.init("admin", function(session) {
      REPORT CARDS (view + print)
   ══════════════════════════════════════════════════════════════════ */
   function pageReportCards() {
-    var students = KHA.load(KHA.STORE.students, []).filter(function(s){ return s.status==="Active"; });
-    var html = KHA.pageHead("Report cards","Generate and print pupil report cards.");
-    html += '<div class="notice info">Select a pupil and term to preview and print their report card with school watermark.</div>';
-    html += '<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">'
-      +'<select id="rcStudent" class="search" style="width:220px"><option value="">— Select pupil —</option>'
-      + students.map(function(s){ return '<option value="'+KHA.esc(s.id)+'">'+KHA.esc(s.name)+' ('+KHA.esc(s.admission)+')</option>'; }).join("")
-      +'</select>'
-      +'<select id="rcTerm" class="search" style="width:140px">'
-      +'<option>Term 1</option><option>Term 2</option><option>Term 3</option></select>'
-      +'<select id="rcYear" class="search" style="width:140px">'
-      +'<option>2024-2025</option><option>2025-2026</option></select>'
-      +'<button class="btn small" id="rcGenerate">Generate report card</button>'
-      +'</div>'
-      +'<div id="rcPreview"></div>';
-    return html;
+    var reports = KHA.load(KHA.STORE.reportCards, []).slice().sort(function(a,b){
+      return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+    });
+    return KHA.pageHead("Report cards","View and print report cards generated by the Director of Studies.")
+      + (reports.length
+        ? '<div class="table-wrap">'+KHA.buildTable([
+            {key:"name",label:"Pupil"},
+            {key:"class",label:"Class"},
+            {key:"term",label:"Term"},
+            {key:"year",label:"Academic year"},
+            {key:"createdAt",label:"Generated",render:function(r){ return KHA.fmtDate(r.createdAt); }},
+            {key:"createdBy",label:"Prepared by"}
+          ],reports,function(report){
+            return '<button class="btn small" data-view-report="'+KHA.esc(report.id)+'">View / print</button>';
+          })+'</div>'
+        : '<div class="notice info">The Director of Studies has not generated any report cards yet.</div>')
+      + '<div id="rcPreview"></div>';
   }
 
   /* ══════════════════════════════════════════════════════════════════
@@ -834,7 +975,7 @@ KHA.init("admin", function(session) {
       html += '</tr>';
     });
     html += '</tbody></table></div>';
-    if (!rows.length) html = '<div class="notice info">No timetable entries yet. Click "+ Add slot" to build the timetable.</div>' + html;
+    if (!rows.length) html = '<div class="notice info">No class timetable entries have been recorded.</div>' + html;
     return html;
   }
 
@@ -848,18 +989,10 @@ KHA.init("admin", function(session) {
       return Object.values(r).some(function(v){ return String(v||"").toLowerCase().includes(q); });
     });
     var html = KHA.pageHead(title, desc+" · "+rows.length+" record(s)",
-      '<input class="search" placeholder="Search…" id="gSearch" value="'+KHA.esc(searchQ)+'">'
-      +'<button class="btn small" data-action="addRecord" data-store="'+KHA.esc(storeKey)+'" data-noun="'+KHA.esc(noun)+'">+ Add '+noun+'</button>');
+      '<input class="search" placeholder="Search…" id="gSearch" value="'+KHA.esc(searchQ)+'">');
     html += '<div class="table-wrap">'
-      + KHA.buildTable(cols, rows, function(r){
-          return '<button class="btn icon" data-edit="'+KHA.esc(r.id)+'" data-store="'+KHA.esc(storeKey)+'" title="Edit">✏️</button>'
-            +'<button class="btn icon danger" data-del="'+KHA.esc(r.id)+'" data-store="'+KHA.esc(storeKey)+'" title="Delete">🗑️</button>';
-        })
+      + KHA.buildTable(cols, rows, null)
       + '</div>';
-    /* store form function reference for use in wireEvents */
-    window.__currentFormFn = formFn;
-    window.__currentStoreKey = storeKey;
-    window.__currentNoun = noun;
     return html;
   }
 
@@ -966,20 +1099,6 @@ KHA.init("admin", function(session) {
       + f("examFee","Examination fee (UGX)","number",rec.examFee)
       + f("total","Total (UGX)","number",rec.total)
       + f("due","Due date","date",rec.due)
-      + '</div>';
-  }
-
-  function invoiceForm(rec) {
-    rec = rec || {};
-    return '<div class="form-grid">'
-      + f("name","Pupil name","text",rec.name,1)
-      + f("admission","Admission no.","text",rec.admission,1)
-      + f("class","Class & stream","text",rec.class,1)
-      + f("term","Term","select",rec.term,1,["Term 1","Term 2","Term 3"])
-      + f("year","Academic year","text",rec.year||KHA.CURRENT_YEAR)
-      + f("amount","Total amount (UGX)","number",rec.amount,1)
-      + f("due","Due date","date",rec.due,1)
-      + f("status","Status","select",rec.status,1,["Unpaid","Part-paid","Paid","Overdue"])
       + '</div>';
   }
 
@@ -1224,45 +1343,74 @@ KHA.init("admin", function(session) {
     var fcStatus = document.getElementById("fcStatus");
     if (fcStatus) fcStatus.addEventListener("change", function(){ filterStatus = this.value; renderPage(); });
 
-    /* report card generator */
-    var rcGen = document.getElementById("rcGenerate");
-    if (rcGen) {
-      rcGen.addEventListener("click", function(){
-        var sid = document.getElementById("rcStudent").value;
-        var term = document.getElementById("rcTerm").value;
-        var year = document.getElementById("rcYear").value;
-        if (!sid) { KHA.toast("Select a pupil first.", "error"); return; }
-        var student = KHA.load(KHA.STORE.students,[]).find(function(s){ return s.id===sid; });
-        if (!student) return;
-        var marks = KHA.load(KHA.STORE.marks,[]).filter(function(m){ return m.admission===student.admission && m.term===term; });
-        document.getElementById("rcPreview").innerHTML = buildReportCard(student, marks, term, year);
-        document.getElementById("rcPreview").scrollIntoView({behavior:"smooth"});
-      });
-    }
-
     /* delegation on content area */
     content.addEventListener("click", function(e) {
-      var t = e.target.closest("[data-action],[data-nav-page],[data-edit],[data-del],[data-open-role],[data-del-account],[data-del-ann],[data-edit-teacher],[data-view-teacher],[data-del-teacher],[data-edit-staff],[data-view-staff],[data-del-staff],[data-add-tt],[data-tt-type],[data-manage-portal],[data-clear-activity-filters]");
+      var t = e.target.closest("[data-action],[data-nav-page],[data-open-role],[data-del-account],[data-del-ann],[data-view-staff],[data-manage-portal],[data-clear-activity-filters],[data-view-report]");
       if (!t) return;
 
       if (t.dataset.navPage) { navigate(t.dataset.navPage); return; }
+      if (t.dataset.action === "printStudents") {
+        var students = KHA.load(KHA.STORE.students, []);
+        printAdminTable("Registered pupils", [
+          {key:"name",label:"Name"},
+          {key:"admission",label:"Admission no."},
+          {key:"classDisplay",label:"Class"},
+          {key:"guardian",label:"Guardian"},
+          {key:"guardianContact",label:"Contact"},
+          {key:"status",label:"Status"}
+        ], students.map(function(student){
+          return Object.assign({},student,{
+            classDisplay:(student.class||"")+(student.stream?" "+student.stream:""),
+            guardianContact:student.guardianPhone||student.phone||""
+          });
+        }));
+        return;
+      }
+      if (t.dataset.action === "printTeachers") {
+        printAdminTable("Registered teachers",[
+          {key:"name",label:"Name"},{key:"staffId",label:"Staff ID"},{key:"role",label:"Role"},
+          {key:"subjects",label:"Subjects"},{key:"classes",label:"Classes"},
+          {key:"phone",label:"Contact"},{key:"status",label:"Status"}
+        ],KHA.load(KHA.STORE.teachers,[]));
+        return;
+      }
+      if (t.dataset.action === "printAllStaff") {
+        var staffRows = KHA.load(KHA.STORE.teachers,[]).map(function(staff){
+          return Object.assign({},staff,{department:"Teaching",role:staff.role||"Teacher"});
+        }).concat(KHA.load(KHA.STORE.houseMasters,[]).map(function(staff){
+          return Object.assign({},staff,{department:"Boarding",role:staff.role||"House master / Matron"});
+        }));
+        printAdminTable("Registered staff",[
+          {key:"name",label:"Name"},{key:"staffId",label:"Staff ID"},
+          {key:"department",label:"Department"},{key:"role",label:"Role"},
+          {key:"phone",label:"Contact"},{key:"status",label:"Status"}
+        ],staffRows);
+        return;
+      }
+      if (t.dataset.viewReport) {
+        var report = KHA.load(KHA.STORE.reportCards,[]).find(function(r){ return r.id===t.dataset.viewReport; });
+        if (!report) {
+          KHA.toast("Report card not found.", "error");
+          return;
+        }
+        var reportStudent = report.student || KHA.load(KHA.STORE.students,[]).find(function(s){
+          return s.id===report.studentId;
+        });
+        if (!reportStudent) {
+          KHA.toast("The pupil for this report card could not be found.", "error");
+          return;
+        }
+        var preview = document.getElementById("rcPreview");
+        preview.innerHTML = '<section class="panel"><div class="panel-head"><h2>'
+          +KHA.esc(report.name)+" · "+KHA.esc(report.term)+" · "+KHA.esc(report.year)
+          +'</h2></div>'
+          +buildReportCard(reportStudent,report.marks||[],report.term,report.year)
+          +'</section>';
+        preview.scrollIntoView({behavior:"smooth"});
+        return;
+      }
       if (t.dataset.action === "newAnnouncement") { openAnnouncement(); return; }
-      if (t.dataset.action === "addTeacher") { openTeacherModal(); return; }
-      if (t.dataset.action === "exportStudents") { exportCSV(); return; }
-      if (t.dataset.action === "addRecord") {
-        openGenericModal(t.dataset.store, t.dataset.noun, null); return;
-      }
-      if (t.dataset.action === "addTT") {
-        openTTModal(t.dataset.ttType, null); return;
-      }
-      if (t.dataset.editTeacher) { openTeacherModal(t.dataset.editTeacher); return; }
-      if (t.dataset.viewTeacher) { openViewTeacher(t.dataset.viewTeacher); return; }
-      if (t.dataset.delTeacher) { deleteTeacher(t.dataset.delTeacher); return; }
       if (t.dataset.viewStaff) { openViewStaff(t.dataset.viewStaff,t.dataset.id); return; }
-      if (t.dataset.editStaff) { openEditStaff(t.dataset.editStaff,t.dataset.id); return; }
-      if (t.dataset.delStaff) { deleteStaff(t.dataset.delStaff,t.dataset.id); return; }
-      if (t.dataset.edit) { openGenericModal(t.dataset.store, window.__currentNoun, t.dataset.edit); return; }
-      if (t.dataset.del) { deleteRecord(t.dataset.store, t.dataset.del); return; }
       if (t.dataset.delAccount) { deleteAccount(t.dataset.delAccount); return; }
       if (t.dataset.delAnn) { deleteAnn(t.dataset.delAnn); return; }
       if (t.hasAttribute("data-clear-activity-filters")) {
@@ -1483,11 +1631,8 @@ KHA.init("admin", function(session) {
         }).join("")
       +'</table></div>'
       +'<div class="modal-foot">'
-      +'<button class="btn secondary" data-edit-teacher="'+KHA.esc(t.id)+'">Edit</button>'
-      +'<button class="btn danger" data-del-teacher="'+KHA.esc(t.id)+'">Delete</button>'
       +'<button class="btn" onclick="KHA.closeModal()">Close</button></div>'
     );
-    wireStaffProfileActions("teacher",t.id);
   }
 
   function openViewStaff(kind, id) {
@@ -1504,11 +1649,8 @@ KHA.init("admin", function(session) {
       +(staff.photo?'<img src="'+KHA.esc(staff.photo)+'" alt="Photo of '+KHA.esc(staff.name)+'" style="width:76px;height:76px;border-radius:50%;object-fit:cover">':'<span class="avatar xl">'+KHA.esc(KHA.initials(staff.name))+'</span>')
       +'<div><h3>'+KHA.esc(staff.name)+'</h3><p>'+KHA.esc(staff.role||"House master / Matron")+' · Boarding</p><p>'+KHA.esc(staff.dormitory||"")+' · '+KHA.esc(staff.phone||"")+'</p><span class="badge '+(staff.status==="Active"?"green":"amber")+'">'+KHA.esc(staff.status||"")+'</span></div>'
       +'</div></div>'
-      +'<div class="modal-foot"><button class="btn secondary" data-edit-staff="house-master" data-id="'+KHA.esc(staff.id)+'">Edit</button>'
-      +'<button class="btn danger" data-del-staff="house-master" data-id="'+KHA.esc(staff.id)+'">Delete</button>'
-      +'<button class="btn" onclick="KHA.closeModal()">Close</button></div>'
+      +'<div class="modal-foot"><button class="btn" onclick="KHA.closeModal()">Close</button></div>'
     );
-    wireStaffProfileActions("house-master",staff.id);
   }
 
   function wireStaffProfileActions(kind,id) {
@@ -1679,24 +1821,6 @@ KHA.init("admin", function(session) {
       +'<button class="btn secondary" id="rcPrint">🖨️ Print report card</button>'
       +'</div>'
       +'</div>';
-  }
-
-  /* ══════════════════════════════════════════════════════════════════
-     CSV EXPORT
-  ══════════════════════════════════════════════════════════════════ */
-  function exportCSV() {
-    var students = KHA.load(KHA.STORE.students, []);
-    var headers = ["Name","Admission","Gender","Class","Stream","Guardian","Phone","Status"];
-    var rows = students.map(function(s){
-      return [s.name,s.admission,s.gender,s.class,s.stream,s.guardian,s.guardianPhone||s.phone,s.status]
-        .map(function(v){ return '"'+(v||"").replace(/"/g,'""')+'"'; }).join(",");
-    });
-    var csv = [headers.join(",")].concat(rows).join("\n");
-    var blob = new Blob([csv], {type:"text/csv"});
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "students_kasese_hills.csv";
-    a.click();
   }
 
   /* ── start ── */

@@ -677,7 +677,8 @@ KHA.init("dos", function(session) {
         {key:"staffId",label:"Staff ID"},
         {key:"checkIn",label:"Check-in"},
         {key:"checkOut",label:"Check-out"},
-        {key:"status",label:"Status",render:sBadge}
+        {key:"status",label:"Status",render:sBadge},
+        {key:"reason",label:"Reason"}
       ], rows, function(r){
         return '<button class="btn icon" data-edit-record="'+KHA.esc(r.id)+'" data-store="teacherAtt" title="Edit">✏️</button>'
           +'<button class="btn icon danger" data-del-record="'+KHA.esc(r.id)+'" data-store="teacherAtt" title="Delete">🗑️</button>';
@@ -803,6 +804,7 @@ KHA.init("dos", function(session) {
           +fi("checkIn","Check-in time","time",rec.checkIn)
           +fi("checkOut","Check-out time","time",rec.checkOut)
           +fi("status","Status","select",rec.status||"Present",1,["Present","Absent","Late","On leave"])
+          +fi("reason","Reason (if absent)","text",rec.reason)
           +'</div>';
       default: return '<p>No form defined for this record type.</p>';
     }
@@ -821,6 +823,7 @@ KHA.init("dos", function(session) {
       +fi("subject","Subject","text",rec.subject,1)
       +fi("teacher","Teacher","text",rec.teacher)
       +fi("room","Room / lab","text",rec.room)
+      +(ttType==="Exam" ? fi("examType","Examination","select",rec.examType,1,["Mid-term","End-of-term"]) : "")
       +'</div>';
   }
 
@@ -1021,9 +1024,33 @@ KHA.init("dos", function(session) {
         if (!sid) { KHA.toast("Please select a pupil.", "error"); return; }
         var s = KHA.load(KHA.STORE.students,[]).find(function(x){ return x.id===sid; });
         if (!s) { KHA.toast("Pupil not found.", "error"); return; }
+        var allMarks = KHA.load(KHA.STORE.marks,[]);
+        var reportMarks = allMarks.filter(function(m){
+          return (m.admission === s.admission || m.pupilName === s.name) && m.term === term;
+        });
+        var reports = KHA.load(KHA.STORE.reportCards,[]);
+        var existingIndex = reports.findIndex(function(report){
+          return report.studentId===s.id && report.term===term && report.year===year;
+        });
+        var reportRecord = {
+          id: existingIndex>-1 ? reports[existingIndex].id : KHA.uid(),
+          studentId: s.id,
+          student: Object.assign({},s),
+          name: s.name,
+          class: s.class,
+          term: term,
+          year: year,
+          marks: reportMarks.map(function(mark){ return Object.assign({},mark); }),
+          createdBy: session.name,
+          createdAt: KHA.nowISO()
+        };
+        if (existingIndex>-1) reports[existingIndex]=reportRecord;
+        else reports.push(reportRecord);
+        if (!KHA.save(KHA.STORE.reportCards,reports)) return;
         document.getElementById("rcOutput").innerHTML = buildReportCard(s, term, year)
           +'<div class="no-print" style="margin-top:12px;display:flex;gap:8px">'
           +'<button class="btn secondary" onclick="window.print()">🖨️ Print report card</button></div>';
+        KHA.toast("Report card saved for administrator viewing.", "success");
       });
     }
 
