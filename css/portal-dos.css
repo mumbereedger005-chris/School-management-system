@@ -1,0 +1,19 @@
+    #dos-print-area { display: none; }
+    @media print {
+      body.dos-all-printing #root { display: none !important; }
+      body.dos-all-printing #dos-print-area {
+        display: block !important;
+        position: static !important;
+        color: #111;
+        background: #fff;
+        font: 10px Arial, sans-serif;
+      }
+      #dos-print-area h1 { text-align: center; margin-bottom: 4px; }
+      #dos-print-area h2 { margin: 18px 0 6px; page-break-after: avoid; }
+      #dos-print-area table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+      #dos-print-area th, #dos-print-area td { border: 1px solid #aaa; padding: 4px; text-align: left; }
+      #dos-print-area th { background: #eee !important; }
+      #rcOutput .report-card + .report-card { page-break-before: always; break-before: page; }
+      #kha-content .cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      #kha-content .module-card { break-inside: avoid; }
+    }

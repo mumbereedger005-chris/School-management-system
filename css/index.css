@@ -1,0 +1,118 @@
+    /* ── Hub-specific styles (only used on this landing page) ── */
+
+    /* Full-screen dark blue gradient background */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(150deg, rgba(15, 30, 53, 0.78), rgba(26, 58, 110, 0.68) 60%, rgba(27, 77, 138, 0.72)),
+        url("house.jpg") center / cover no-repeat fixed;
+      display: grid;
+      place-items: center;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+
+    /* Centred content wrapper */
+    .hub {
+      width: min(100%, 980px);
+      padding: 32px 20px 52px;
+    }
+
+    /* School crest + name header */
+    .hub-top {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 40px;
+      color: #fff;
+    }
+    .hub-badge { width: 82px; height: 94px; margin-bottom: 18px; }
+    .hub-top h1 {
+      margin: 0;
+      font-size: clamp(24px, 4vw, 40px);
+      letter-spacing: -1.5px;
+      font-weight: 800;
+    }
+    .hub-top .sub     { margin: 8px 0 0; color: #a8c3e8; font-size: 13px; }
+    .hub-top .tagline {
+      margin: 14px 0 0;
+      color: #7fa3cc;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    /* Portal cards in a responsive grid */
+    .portals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
+      gap: 16px;
+    }
+
+    /* Individual portal card */
+    .portal-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 22px;
+      text-decoration: none;
+      box-shadow: 0 4px 24px #0006;
+      transition: transform .15s, box-shadow .15s;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+    }
+    .portal-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px #0009;
+    }
+
+    /* Coloured stripe at the top of each card (portal's brand colour) */
+    .pc-stripe {
+      height: 5px;
+      border-radius: 3px;
+      margin-bottom: 18px;
+    }
+
+    .pc-icon  { font-size: 32px; margin-bottom: 10px; }
+    .pc-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .pc-title { font-size: 16px; font-weight: 750; margin: 0 0 6px; color: #17243a; letter-spacing: -.3px; }
+    .pc-desc  { font-size: 11px; color: #748198; line-height: 1.65; flex: 1; margin-bottom: 12px; }
+    .pc-meta  { font-size: 9px; color: #aaa; margin-bottom: 10px; }
+
+    /* "Open portal" button at the bottom of each card */
+    .pc-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 15px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border: 0;
+      cursor: pointer;
+      width: 100%;
+      text-decoration: none;
+      box-sizing: border-box;
+    }
+
+    /* Footer */
+    .hub-footer {
+      text-align: center;
+      margin-top: 30px;
+      color: #5a7fa8;
+      font-size: 10px;
+      line-height: 1.8;
+    }
+
+    /* Responsive: 2-column grid on small screens */
+    @media (max-width: 600px) {
+      .portals-grid { grid-template-columns: 1fr 1fr; }
+      .hub-top h1   { font-size: 22px; }
+    }
+    @media (max-width: 400px) {
+      .portals-grid { grid-template-columns: 1fr; }
+    }

@@ -1,0 +1,10 @@
+    @media print {
+      body.parent-printing #root,
+      body.parent-printing #root * { visibility: hidden !important; }
+      body.parent-printing #parent-print-area,
+      body.parent-printing #parent-print-area * { visibility: visible !important; }
+      body.parent-printing #parent-print-area {
+        position: fixed; inset: 0; width: 100%; padding: 20px;
+        background: #fff; color: #111; box-sizing: border-box;
+      }
+    }
